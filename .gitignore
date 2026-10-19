@@ -4,3 +4,11 @@ data/
 .env
 playwright-report/
 test-results/
+.env.*
+*.sqlite
+*.sqlite-*
+*.db
+backups/
+artworks/
+data-restaurados*/
+*.zip

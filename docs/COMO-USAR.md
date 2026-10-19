@@ -1,5 +1,7 @@
 # Seu ateliê digital — primeira versão
 
+> Este documento registra a primeira versão. Para a versão 2.0 e instruções de Windows, consulte [VERSAO-2-WINDOWS.md](VERSAO-2-WINDOWS.md).
+
 O README original foi preservado. Este guia é a documentação da aplicação.
 
 ## Para abrir no seu computador

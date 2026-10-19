@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 test("navegação, cadastro, pedido, custo histórico e experiência móvel", async ({
   page,
 }) => {
+  page.on("dialog", (dialog) => dialog.accept());
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
@@ -29,14 +30,15 @@ test("navegação, cadastro, pedido, custo histórico e experiência móvel", as
   await page
     .getByLabel("Item 1", { exact: true })
     .selectOption({ label: "Modelo · Caneca cerâmica 325 ml" });
-  await page.getByRole("button", { name: "Calcular custos" }).click();
+  await page.getByLabel("Venda atribuída ao item 1").fill("59");
+  await page.getByRole("button", { name: "Conferir custos e rateio" }).click();
   await expect(page.locator("#calculation")).toContainText("14,00");
   await expect(page.locator("#calculation")).toContainText("45,00");
   await page.getByRole("button", { name: "Salvar pedido" }).click();
   await expect(page.locator("#notice")).toContainText("Pedido salvo");
   await page.getByLabel("Pesquisar pedidos").fill(client);
   await page.getByRole("button", { name: "Ver", exact: true }).click();
-  await expect(page.locator("dialog")).toContainText("Custo histórico");
+  await expect(page.locator("dialog")).toContainText("Custo total");
   await page.getByRole("button", { name: "Fechar janela" }).click();
   await page.getByRole("link", { name: "Simulador" }).click();
   await expect(

@@ -97,6 +97,15 @@ test("fluxo persistente de clientes, custos, pedidos, exportação e importaçã
       ).status,
       400,
     );
+    const receipt = await request("v2/orders/" + order.id + "/payments", {
+      revision: 0,
+      type: "receipt",
+      value: 80,
+      date: "2026-03-01",
+      method: "Pix",
+      reason: "Pagamento fictício comprovado",
+    });
+    assert.equal(receipt.status, 200);
     await request(
       "orders/" + order.id,
       { status: "Em produção", payment: "Pago" },

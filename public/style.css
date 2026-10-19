@@ -671,3 +671,87 @@ a {
 .table-wrap {
   max-width: 100%;
 }
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 18px 0;
+  padding: 16px;
+  min-width: 0;
+}
+fieldset:disabled {
+  opacity: 0.6;
+}
+legend {
+  font-family: Georgia, serif;
+  padding: 0 8px;
+}
+.line-editor {
+  padding: 14px;
+  margin: 12px 0;
+  background: #f7f8f3;
+  border-radius: 8px;
+}
+.line-editor > label {
+  font-size: 12px;
+}
+.line-editor input[type="checkbox"] {
+  width: auto;
+}
+.cash-cards,
+.collection-panel {
+  margin-top: 22px;
+}
+.art-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.art-thumb {
+  width: 100%;
+  height: 140px;
+  object-fit: contain;
+}
+.art-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 300px;
+  margin: 16px auto;
+}
+pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.late {
+  color: #a1453b !important;
+}
+.delivery-alert {
+  font-size: 10px;
+}
+.panel + .panel {
+  margin-top: 20px;
+}
+.collection-panel select {
+  max-width: 170px;
+}
+.brand svg {
+  vertical-align: middle;
+}
+.line-editor .form-grid label {
+  font-size: 12px;
+}
+h3 {
+  margin-top: 20px;
+}
+.art-grid .history p {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .art-grid {
+    grid-template-columns: 1fr;
+  }
+  .panel-head {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}

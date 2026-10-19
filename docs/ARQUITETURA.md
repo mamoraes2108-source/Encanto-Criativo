@@ -1,5 +1,7 @@
 # Estrutura e decisões da versão 0.1
 
+> Este documento registra a primeira versão. Para a versão 2.0 e instruções de Windows, consulte [VERSAO-2-WINDOWS.md](VERSAO-2-WINDOWS.md).
+
 - `server.js`: API Express, persistência SQLite, importação e exportação Excel.
 - `domain.js`: regras de vigência, quantidades, custos, lucro e margem.
 - `public/`: interface em português, responsiva, sem fontes ou serviços externos.
