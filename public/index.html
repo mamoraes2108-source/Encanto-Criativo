@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Encanto Criativo • Gestão</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <aside>
+      <a class="brand" href="#painel"
+        ><span class="flower">✿</span> encanto<small>CRIATIVO</small></a
+      >
+      <div class="nav-label">SEU ATELIÊ, ORGANIZADO</div>
+      <nav id="nav"></nav>
+      <div class="sidebar-foot">
+        Feito para criar<br /><em>com mais tranquilidade.</em>
+        <p>✧ Gestão do ateliê · v0.1</p>
+      </div>
+    </aside>
+    <main>
+      <header>
+        <div>
+          <small
+            >ENCANTO CRIATIVO / <span id="breadcrumb">VISÃO GERAL</span></small
+          >
+          <h1 id="title">Um olhar para o seu negócio</h1>
+          <p id="subtitle">Cada detalhe organizado. Mais espaço para criar.</p>
+        </div>
+        <span class="avatar">EC</span>
+      </header>
+      <div class="demo-banner">
+        <span
+          >✧ <strong>Ambiente de testes</strong> · Os registros iniciais são
+          fictícios.</span
+        ><span>Dados salvos neste computador</span>
+      </div>
+      <div id="notice" role="status"></div>
+      <section id="content"></section>
+      <footer>
+        Encanto Criativo <span>Gestão com carinho, decisões com clareza.</span>
+      </footer>
+    </main>
+    <dialog id="modal">
+      <div id="modal-content"></div>
+      <button
+        class="close"
+        aria-label="Fechar janela"
+        onclick="document.querySelector('#modal').close()"
+      >
+        ×
+      </button>
+    </dialog>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
