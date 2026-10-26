@@ -1,3 +1,4 @@
+import ExcelJS from "exceljs";
 import { test, expect } from "@playwright/test";
 test("navegação, cadastro, pedido, custo histórico e experiência móvel", async ({
   page,
@@ -71,15 +72,25 @@ test("importação fictícia exige prévia, mapeamento, conferência e autoriza�
   await page.goto("/#importar");
   const before = (await (await page.request.get("/api/data")).json()).orders
     .length;
-  await page
-    .locator("#excel-file")
-    .setInputFiles("examples/Vendas_Encanto_DEMO.xlsx");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile("examples/Vendas_Encanto_DEMO.xlsx");
+  const sheet = workbook.getWorksheet("Pedidos");
+  sheet.getCell("M1").value = "ID original";
+  for (let i = 2; i <= sheet.rowCount; i++)
+    sheet.getCell(`M${i}`).value = `DEMO-${i}`;
+  await page.locator("#excel-file").setInputFiles({
+    name: "ficticio.xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: Buffer.from(await workbook.xlsx.writeBuffer()),
+  });
   await page.getByRole("button", { name: "Ler e pré-visualizar" }).click();
   await expect(
     page.getByRole("heading", { name: "1. Inspecione as abas" }),
   ).toBeVisible();
   await page.locator("#sheet").selectOption("Pedidos");
   const columns = {
+    originalId: "12",
     client: "0",
     date: "1",
     delivery: "2",

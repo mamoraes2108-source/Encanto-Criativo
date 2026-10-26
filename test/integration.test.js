@@ -136,6 +136,7 @@ test("fluxo persistente de clientes, custos, pedidos, exportação e importaçã
       "Status",
       "Pagamento",
       "Modelo",
+      "ID",
     ]);
     sheet.addRow([
       "Pessoa fictícia importada",
@@ -147,6 +148,7 @@ test("fluxo persistente de clientes, custos, pedidos, exportação e importaçã
       "Aberto",
       "Pendente",
       "Xícara",
+      "TEST-001",
     ]);
     workbook.addWorksheet("Resumo").addRow(["Resumo original"]);
     workbook.addWorksheet("Custos").addRow(["Custos originais"]);
@@ -173,6 +175,7 @@ test("fluxo persistente de clientes, custos, pedidos, exportação e importaçã
         status: "6",
         payment: "7",
         model: "8",
+        originalId: "9",
       },
     };
     assert.equal(

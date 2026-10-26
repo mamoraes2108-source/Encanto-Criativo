@@ -306,10 +306,23 @@ app.post("/api/import/preview", upload.single("file"), async (req, res) => {
         .reduce(
           (sum, row) =>
             sum +
-            (row || []).filter((v) => v && typeof v === "object" && v.formula)
-              .length,
+            (row || []).filter(
+              (v) =>
+                v && typeof v === "object" && (v.formula || v.sharedFormula),
+            ).length,
           0,
         ),
+      emptyRows: Array.from({ length: s.rowCount }, (_, i) => {
+        const row = s.getRow(i + 1);
+        return !Array.from({ length: s.columnCount }, (_, j) => {
+          const cell = row.getCell(j + 1);
+          const v =
+            cell.type === ExcelJS.ValueType.Formula ? cell.result : cell.text;
+          return cell.type === ExcelJS.ValueType.Formula
+            ? v != null && String(v).trim() !== "" && v !== 0 && v !== false
+            : String(v ?? "").trim() !== "";
+        }).some(Boolean);
+      }),
       rows: Array.from({ length: s.rowCount }, (_, i) =>
         Array.from({ length: s.columnCount }, (_, j) => {
           const cell = s.getRow(i + 1).getCell(j + 1);
@@ -339,26 +352,6 @@ function numberSigned(value) {
   if (!Number.isFinite(n)) throw Error("Lucro da planilha inválido.");
   return n;
 }
-function importSignature(o) {
-  return JSON.stringify([
-    (
-      o.importName ||
-      o.name ||
-      list("clients").find((c) => c.id === o.clientId)?.name ||
-      ""
-    )
-      .trim()
-      .toLowerCase(),
-    o.date,
-    o.delivery,
-    o.quantity,
-    o.total,
-    o.cost,
-    o.theme || "",
-    o.collection || "",
-    o.model || o.lines?.[0]?.name,
-  ]);
-}
 function importedRows(body) {
   const preview = previews.get(body.token);
   if (!preview || preview.expires < Date.now())
@@ -384,12 +377,21 @@ function importedRows(body) {
   const rows = sheet.rows
     .slice(start)
     .map((r, i) => {
-      if (!r.some(Boolean)) return null;
+      if (sheet.emptyRows[start + i]) return null;
       try {
         const name = field(r, "client");
         if (!name) throw Error("Cliente ausente.");
-        const day = date(field(r, "date"), "Data do pedido");
-        const delivery = date(field(r, "delivery"), "Entrega");
+        const warnings = [];
+        const importDate = (value, label) => {
+          const match = /^(\d{1,2})\/+(\d{1,2})\/+(\d{4})$/.exec(value);
+          if (!match) return date(value, label);
+          const normalized = `${match[3]}-${match[2].padStart(2, "0")}-${match[1].padStart(2, "0")}`;
+          date(normalized, label);
+          warnings.push(`${label}: ${value} → ${normalized}.`);
+          return normalized;
+        };
+        const day = importDate(field(r, "date"), "Data do pedido");
+        const delivery = importDate(field(r, "delivery"), "Entrega");
         if (delivery < day) throw Error("Entrega anterior ao pedido.");
         const quantity = number(
           decimal(field(r, "quantity")),
@@ -399,7 +401,9 @@ function importedRows(body) {
         if (!quantity) throw Error("Quantidade deve ser positiva.");
         const total = number(decimal(field(r, "total")), "Venda");
         const cost = number(decimal(field(r, "cost")), "Custo histórico");
-        const status = field(r, "status"),
+        const originalStatus = field(r, "status");
+        const status =
+            originalStatus === "Agendado" ? "Aberto" : originalStatus,
           payment = field(r, "payment");
         if (
           ![
@@ -413,11 +417,20 @@ function importedRows(body) {
           throw Error("Status ausente ou inválido.");
         if (!["Pendente", "Parcial", "Pago"].includes(payment))
           throw Error("Pagamento ausente ou inválido.");
+        if (originalStatus === "Agendado")
+          warnings.push(
+            "Status Agendado → Aberto; status original preservado.",
+          );
         const model = field(r, "model");
         if (!model) throw Error("Modelo ausente.");
         return {
           line: start + i + 1,
           valid: true,
+          originalId: field(r, "originalId"),
+          originalDate: field(r, "date"),
+          originalDelivery: field(r, "delivery"),
+          originalStatus,
+          warnings,
           name,
           date: day,
           delivery,
@@ -444,15 +457,32 @@ function importedRows(body) {
       }
     })
     .filter(Boolean);
-  const seen = new Set(list("orders").map(importSignature));
-  for (const r of rows.filter((r) => r.valid)) {
-    const sig = importSignature(r);
-    if (seen.has(sig)) {
+  const existing = new Set(
+    list("orders")
+      .map((o) => String(o.originalId ?? "").trim())
+      .filter(Boolean),
+  );
+  const counts = new Map();
+  // Count IDs even on invalid rows, so no occurrence is silently selected.
+  for (let i = start; i < sheet.rows.length; i++) {
+    if (sheet.emptyRows[i]) continue;
+    const id = field(sheet.rows[i], "originalId");
+    if (id) counts.set(id, (counts.get(id) || 0) + 1);
+  }
+  for (const r of rows) {
+    const id = field(sheet.rows[r.line - 1], "originalId");
+    r.originalId = id;
+    const issue = !id
+      ? "ID original ausente: selecione a coluna e confira a planilha."
+      : counts.get(id) > 1
+        ? `ID original repetido no arquivo: ${id}. Confira todas as ocorrências.`
+        : existing.has(id)
+          ? `ID original já cadastrado: ${id}. Reimportação bloqueada.`
+          : "";
+    if (issue) {
       r.valid = false;
-      r.error =
-        "Possível duplicidade com pedido existente ou linha anterior do arquivo.";
+      r.error = [r.error, issue].filter(Boolean).join(" ");
     }
-    seen.add(sig);
   }
   return rows;
 }
@@ -474,20 +504,6 @@ app.post("/api/import/confirm", (req, res) => {
     throw Error("Confirme a conferência das divergências de lucro.");
   if (!rows.length || rows.some((r) => !r.valid))
     throw Error("Corrija todos os erros antes de importar.");
-  const existing = list("orders");
-  const signature = (o) =>
-    JSON.stringify([
-      o.importName || list("clients").find((c) => c.id === o.clientId)?.name,
-      o.date,
-      o.delivery,
-      o.quantity,
-      o.total,
-      o.cost,
-      o.theme,
-      o.collection,
-      o.lines?.[0]?.name,
-    ]);
-  const signatures = new Set(existing.map(signature));
   const candidates = rows.map((r) => ({
     ...r,
     importName: r.name,
@@ -503,14 +519,6 @@ app.post("/api/import/confirm", (req, res) => {
     imported: true,
     demo: false,
   }));
-  for (const r of candidates) {
-    const key = signature(r);
-    if (signatures.has(key))
-      throw Error(
-        `Linha ${r.line}: possível pedido duplicado. Confira antes de importar.`,
-      );
-    signatures.add(key);
-  }
   transaction(() => {
     for (const r of candidates) {
       let client = list("clients").find(
@@ -547,7 +555,7 @@ function materialRows(body) {
   return sheet.rows
     .slice(header)
     .map((r, i) => {
-      if (!r.some(Boolean)) return null;
+      if (sheet.emptyRows[header + i]) return null;
       try {
         const name = text(field(r, "name"), "Nome", 150),
           type = field(r, "type"),
@@ -662,6 +670,7 @@ app.get("/api/export", async (req, res) => {
         "Produção",
         "Pagamento",
         "Demonstração",
+        "ID original",
       ]);
       for (const o of list(kind))
         s.addRow([
@@ -678,6 +687,7 @@ app.get("/api/export", async (req, res) => {
           o.status,
           o.payment,
           o.demo ? "Sim" : "Não",
+          o.originalId || "",
         ]);
     } else if (kind === "clients") {
       s.addRow(["Nome", "Telefone", "Email", "Observações"]);
