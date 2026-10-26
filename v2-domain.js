@@ -231,9 +231,9 @@ export function collectionRows(order) {
       }));
   return [
     {
-      name: order.imported
-        ? "Não classificado / conferir"
-        : order.collection || "Não classificado",
+      name:
+        order.collection ||
+        (order.imported ? "Não classificado / conferir" : "Não classificado"),
       total: order.total,
       cost: order.cost,
       quantity: order.quantity,
@@ -242,7 +242,9 @@ export function collectionRows(order) {
 }
 export function collectionReport(orders) {
   const map = new Map();
-  for (const o of orders.filter((o) => o.status !== "Cancelado"))
+  for (const o of orders.filter(
+    (o) => o.status !== "Cancelado" && o.demo !== true,
+  ))
     for (const r of collectionRows(o)) {
       const v = map.get(r.name) || {
         name: r.name,

@@ -118,15 +118,16 @@ const clientName = (id) =>
 const active = () =>
   data.orders.filter(
     (o) =>
+      o.demo !== true &&
       o.status !== "Cancelado" &&
       (!range.from || o.date >= range.from) &&
-      (!range.to || o.date <= range.to) &&
-      (range.demo === "all" || (range.demo === "demo" ? o.demo : !o.demo)),
+      (!range.to || o.date <= range.to),
   );
 const sum = (rows, key) => rows.reduce((s, o) => s + Number(o[key] || 0), 0);
 const badge = (s) => `<span class="badge ${esc(s)}">${esc(s)}</span>`;
 function filters() {
-  return `<div class="filters"><label>De <input type="date" id="from" value="${range.from}" aria-label="Início do período"></label><label>Até <input type="date" id="to" value="${range.to}" aria-label="Fim do período"></label><select id="demo" aria-label="Origem dos dados"><option value="all">Todos os dados</option><option value="demo" ${range.demo === "demo" ? "selected" : ""}>Só demonstração</option><option value="real" ${range.demo === "real" ? "selected" : ""}>Sem demonstração</option></select></div>`;
+  const realOnly = ["", "#painel", "#relatorios"].includes(location.hash);
+  return `<div class="filters"><label>De <input type="date" id="from" value="${range.from}" aria-label="Início do período"></label><label>Até <input type="date" id="to" value="${range.to}" aria-label="Fim do período"></label><select id="demo" aria-label="Origem dos dados">${realOnly ? '<option value="all">Somente pedidos reais</option>' : `<option value="all">Todos os dados</option><option value="demo" ${range.demo === "demo" ? "selected" : ""}>Só demonstração</option><option value="real" ${range.demo === "real" ? "selected" : ""}>Sem demonstração</option>`}</select></div>`;
 }
 function bindFilters() {
   ["from", "to", "demo"].forEach(
@@ -181,7 +182,7 @@ function chart(rows) {
 }
 function v1Ranking(rows, type) {
   const map = new Map();
-  for (const o of rows) {
+  for (const o of rows.filter((o) => o.demo !== true)) {
     if (type === "Coleção") {
       const key = o.collection || "Sem coleção";
       map.set(key, (map.get(key) || 0) + o.quantity);
@@ -435,7 +436,7 @@ function priceForm(item) {
 function v1Reports() {
   const rows = active();
   $("#content").innerHTML =
-    `<div class="toolbar">${filters()}<a class="button" href="/api/export">↓ Exportar base completa · Excel</a></div>${cards(rows)}<div class="grid2"><div class="panel"><h2>Resultados por mês</h2><p class="subtle">${sum(rows, "quantity")} peças vendidas · ${rows.length} pedidos no período</p><div class="table-wrap"><table><thead><tr><th>Mês</th><th>Vendas</th><th>Custos</th><th>Lucro bruto</th><th>Peças</th></tr></thead><tbody>${months(
+    `<div class="toolbar">${filters()}<a class="button" href="/api/export">↓ Exportar pedidos reais · Excel</a></div>${cards(rows)}<div class="grid2"><div class="panel"><h2>Resultados por mês</h2><p class="subtle">${sum(rows, "quantity")} peças vendidas · ${rows.length} pedidos no período</p><div class="table-wrap"><table><thead><tr><th>Mês</th><th>Vendas</th><th>Custos</th><th>Lucro bruto</th><th>Peças</th></tr></thead><tbody>${months(
       rows,
     )
       .map(
@@ -588,7 +589,7 @@ function deliveryState(o) {
 }
 function collectionStats(rows) {
   const map = new Map();
-  for (const o of rows) {
+  for (const o of rows.filter((o) => o.demo !== true)) {
     const lines =
       o.schemaVersion === 2
         ? o.lines
@@ -601,9 +602,11 @@ function collectionStats(rows) {
             }))
         : [
             {
-              name: o.imported
-                ? "Não classificado / conferir"
-                : o.collection || "Não classificado",
+              name:
+                o.collection ||
+                (o.imported
+                  ? "Não classificado / conferir"
+                  : "Não classificado"),
               total: o.total,
               cost: o.cost,
               quantity: o.quantity,
@@ -688,9 +691,7 @@ function bindCollections(rows) {
   drawAll();
 }
 function cashPanel() {
-  const eligible = data.orders.filter(
-    (o) => range.demo === "all" || (range.demo === "demo" ? o.demo : !o.demo),
-  );
+  const eligible = data.orders.filter((o) => o.demo !== true);
   const ids = new Set(eligible.map((o) => o.id));
   const movements = data.payments.filter(
     (p) =>
@@ -726,12 +727,9 @@ function reports() {
       `<div class="panel"><h2>Histórico de recebimentos</h2><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Data</th><th>Movimento</th><th>Valor</th><th>Forma / motivo</th></tr></thead><tbody>${data.payments
         .filter(
           (p) =>
+            data.orders.some((o) => o.id === p.orderId && o.demo !== true) &&
             (!range.from || p.date >= range.from) &&
-            (!range.to || p.date <= range.to) &&
-            (range.demo === "all" ||
-              (range.demo === "demo"
-                ? data.orders.find((o) => o.id === p.orderId)?.demo
-                : !data.orders.find((o) => o.id === p.orderId)?.demo)),
+            (!range.to || p.date <= range.to),
         )
         .map(
           (p) =>

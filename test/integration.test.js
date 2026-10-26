@@ -122,7 +122,7 @@ test("fluxo persistente de clientes, custos, pedidos, exportação e importaçã
     assert.equal(exportResponse.status, 200);
     const exported = new ExcelJS.Workbook();
     await exported.xlsx.load(await exportResponse.arrayBuffer());
-    assert.equal(exported.getWorksheet("Pedidos").rowCount, 5);
+    assert.equal(exported.getWorksheet("Pedidos").rowCount, 2);
     assert.equal(exported.getWorksheet("Custos").rowCount, 8);
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Pedidos");

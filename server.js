@@ -648,6 +648,8 @@ app.post("/api/import/materials/confirm", (req, res) => {
   res.json({ count: rows.length });
 });
 app.get("/api/export", async (req, res) => {
+  const realOrders = list("orders").filter((o) => o.demo !== true);
+  const realIds = new Set(realOrders.map((o) => o.id));
   const w = new ExcelJS.Workbook();
   for (const [name, kind] of [
     ["Pedidos", "orders"],
@@ -672,7 +674,7 @@ app.get("/api/export", async (req, res) => {
         "Demonstração",
         "ID original",
       ]);
-      for (const o of list(kind))
+      for (const o of realOrders)
         s.addRow([
           list("clients").find((c) => c.id === o.clientId)?.name,
           o.date,
@@ -710,7 +712,7 @@ app.get("/api/export", async (req, res) => {
     "Peças",
     "Participação %",
   ]);
-  for (const c of collectionReport(list("orders")))
+  for (const c of collectionReport(realOrders))
     collections.addRow([
       c.name,
       c.total,
@@ -734,7 +736,7 @@ app.get("/api/export", async (req, res) => {
     "Custo comum rateado",
     "Custo atribuído",
   ]);
-  for (const o of list("orders"))
+  for (const o of realOrders)
     for (const l of o.lines)
       items.addRow([
         o.id,
@@ -751,7 +753,7 @@ app.get("/api/export", async (req, res) => {
       ]);
   const expenses = w.addWorksheet("Despesas");
   expenses.addRow(["Pedido", "Descrição", "Valor"]);
-  for (const o of list("orders"))
+  for (const o of realOrders)
     for (const [name, value] of [
       ["Impressão", o.printing],
       ["Taxas", o.fees],
@@ -772,7 +774,7 @@ app.get("/api/export", async (req, res) => {
     "Motivo",
     "Recebimento original",
   ]);
-  for (const p of list("payments"))
+  for (const p of list("payments").filter((p) => realIds.has(p.orderId)))
     cash.addRow([
       p.orderId,
       p.type === "receipt" ? "Recebimento" : "Estorno",
@@ -793,7 +795,7 @@ app.get("/api/export", async (req, res) => {
     "Custo anterior",
     "Custo novo",
   ]);
-  for (const h of list("history"))
+  for (const h of list("history").filter((h) => realIds.has(h.orderId)))
     audit.addRow([
       h.orderId,
       h.at,

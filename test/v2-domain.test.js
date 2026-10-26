@@ -149,7 +149,7 @@ test("legado não inventa distribuição ou recebimento e preserva status antigo
   assert.equal(collectionReport([old])[0].name, "Floral");
   assert.equal(
     collectionReport([{ ...old, imported: true }])[0].name,
-    "Não classificado / conferir",
+    "Floral",
   );
   const summary = paymentSummary(old, []);
   assert.equal(summary.needsReconciliation, true);

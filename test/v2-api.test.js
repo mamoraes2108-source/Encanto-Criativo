@@ -81,7 +81,7 @@ test("V2 integra revisões auditáveis, caixa, cancelamento, clientes, anexos pr
         { key: "a", id: model.id, quantity: 1, sale: 60, collection: "Natal" },
         { key: "b", id: model.id, quantity: 1, sale: 40, collection: "Afeto" },
       ],
-      demo: true,
+      demo: false,
     };
     let r = await req("v2/orders", input);
     assert.equal(r.status, 200);
