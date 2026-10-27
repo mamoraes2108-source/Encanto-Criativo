@@ -12,3 +12,7 @@ backups/
 artworks/
 data-restaurados*/
 *.zip
+
+# Commercial documents and workbooks must remain private.
+*.pdf
+*.xlsx

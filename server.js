@@ -1,4 +1,8 @@
 import express from "express";
+import { registerV3 } from "./v3-api.js";
+import { createBackup } from "./backup.js";
+import { existsSync, mkdirSync as makeDir } from "node:fs";
+import path from "node:path";
 import { registerV2 } from "./v2-api.js";
 import { text, cents, collectionReport, paymentSummary } from "./v2-domain.js";
 import multer from "multer";
@@ -10,6 +14,18 @@ import { randomUUID } from "node:crypto";
 import { calculate, validateOrder, date, number, money } from "./domain.js";
 const directory = process.env.DATA_DIR || "./data";
 mkdirSync(directory, { recursive: true, mode: 0o700 });
+// Back up an existing installation before SQLite is opened for any writing.
+if (existsSync(path.join(directory, "encanto.sqlite"))) {
+  makeDir(path.join(directory, "backups"), { recursive: true });
+  await createBackup(
+    directory,
+    path.join(
+      directory,
+      "backups",
+      `antes-v3-${Date.now()}-${randomUUID()}.zip`,
+    ),
+  );
+}
 const db = new DatabaseSync(`${directory}/encanto.sqlite`);
 chmodSync(`${directory}/encanto.sqlite`, 0o600);
 db.exec(
@@ -39,7 +55,7 @@ const transaction = (fn) => {
     throw e;
   }
 };
-if (!list("meta").length)
+if (db.prepare("SELECT COUNT(*) AS n FROM records").get().n === 0)
   transaction(() => {
     put("meta", { id: "initialized", version: 1 });
     const clients = [
@@ -127,8 +143,12 @@ app.use((req, res, next) => {
     return res.status(403).json({ error: "Origem não permitida." });
   next();
 });
+registerV3(app, { db, list, put, transaction, directory });
 registerV2(app, { db, list, put, transaction, directory });
 app.use(express.static("public"));
+app.get(["/v3-domain.js", "/v2-domain.js", "/domain.js"], (req, res) =>
+  res.sendFile(path.resolve("." + req.path)),
+);
 app.get("/api/data", (req, res) =>
   res.json({
     clients: list("clients"),
@@ -546,6 +566,12 @@ function materialRows(body) {
   const header = number(body.header, "Cabeçalho", true);
   if (header < 1 || header >= sheet.rows.length)
     throw Error("Cabeçalho inválido.");
+  const end =
+    body.lastRow === undefined || body.lastRow === ""
+      ? sheet.rows.length
+      : number(body.lastRow, "Última linha", true);
+  if (end <= header || end > sheet.rows.length)
+    throw Error("Última linha de materiais inválida.");
   const field = (r, k) => {
     const v = body.mapping?.[k];
     return v !== "" && v !== undefined && /^\d+$/.test(String(v))
@@ -553,13 +579,29 @@ function materialRows(body) {
       : "";
   };
   return sheet.rows
-    .slice(header)
+    .slice(header, end)
     .map((r, i) => {
       if (sheet.emptyRows[header + i]) return null;
       try {
         const name = text(field(r, "name"), "Nome", 150),
-          type = field(r, "type"),
-          day = date(field(r, "date"), "Vigência"),
+          sourceCategory = field(r, "type"),
+          type =
+            body.categoryMapping?.[sourceCategory] ||
+            (/^(modelo|modelos|caneca|canecas|xícara|xícaras|produto|produtos)$/i.test(
+              sourceCategory,
+            )
+              ? "Modelo"
+              : /^(embalagem|embalagens)$/i.test(sourceCategory)
+                ? "Embalagem"
+                : /^(complemento|complementos|chocolate|chocolates|material|materiais)$/i.test(
+                      sourceCategory,
+                    )
+                  ? "Complemento"
+                  : sourceCategory),
+          day = date(
+            field(r, "date").replace(/^(\d{2})\/(\d{2})\/(\d{4})$/, "$3-$2-$1"),
+            "Vigência",
+          ),
           raw = field(r, "value");
         if (
           !name ||
@@ -576,12 +618,15 @@ function materialRows(body) {
         if (
           list("catalog").some(
             (c) =>
-              c.name.toLowerCase() === name.toLowerCase() &&
-              (c.type !== type || c.prices.some((p) => p.date === day)),
+              !c.archived &&
+              c.name.trim().toLowerCase() === name.trim().toLowerCase() &&
+              (c.demo === true ||
+                c.type !== type ||
+                c.prices.some((p) => p.date === day)),
           )
         )
           throw Error(
-            "Item com categoria incompatível ou vigência já cadastrada.",
+            "Possível duplicidade: categoria incompatível, vigência existente ou item fictício. Confira e arquive o fictício antes de importar o real.",
           );
         cents(value);
         return {
@@ -589,6 +634,7 @@ function materialRows(body) {
           line: header + i + 1,
           name,
           type,
+          sourceCategory,
           date: day,
           value,
         };
@@ -611,20 +657,31 @@ app.post("/api/import/materials/check", (req, res) => {
   }
   res.json({ rows });
 });
-app.post("/api/import/materials/confirm", (req, res) => {
+app.post("/api/import/materials/confirm", async (req, res) => {
   if (req.body.confirmation !== "CONFIRMAR IMPORTAÇÃO DE MATERIAIS")
     throw Error("Confirmação expressa necessária.");
   const rows = materialRows(req.body);
   if (!rows.length || rows.some((r) => !r.valid))
     throw Error("Corrija as pendências.");
+  const importSnapshot = JSON.stringify(list("catalog"));
+  await import("node:fs/promises").then((fs) =>
+    fs.mkdir(path.join(directory, "backups"), { recursive: true }),
+  );
+  const backupFile = `antes-catalogo-${Date.now()}-${randomUUID()}.zip`;
+  await createBackup(directory, path.join(directory, "backups", backupFile));
   transaction(() => {
+    if (JSON.stringify(list("catalog")) !== importSnapshot)
+      throw Error("Catálogo mudou. Confira novamente.");
     for (const r of rows) {
       const existing = list("catalog").find(
-        (c) => c.name.toLowerCase() === r.name.toLowerCase(),
+        (c) =>
+          !c.archived &&
+          c.name.trim().toLowerCase() === r.name.trim().toLowerCase(),
       );
       if (
         existing &&
-        (existing.type !== r.type ||
+        (existing.demo === true ||
+          existing.type !== r.type ||
           existing.prices.some((p) => p.date === r.date))
       )
         throw Error("Vigência duplicada ou categoria incompatível.");
@@ -634,11 +691,13 @@ app.post("/api/import/materials/confirm", (req, res) => {
           ? {
               ...existing,
               prices: [...existing.prices, { date: r.date, value: r.value }],
+              sourceCategory: r.sourceCategory,
             }
           : {
               id: randomUUID(),
               name: r.name,
               type: r.type,
+              sourceCategory: r.sourceCategory,
               prices: [{ date: r.date, value: r.value }],
             },
       );

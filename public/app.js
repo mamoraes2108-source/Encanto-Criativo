@@ -1,3 +1,4 @@
+import { financialSummary, orderResult, settingsDefaults } from "/v3-domain.js";
 const $ = (s) => document.querySelector(s);
 const esc = (v) =>
   String(v ?? "").replace(
@@ -207,7 +208,7 @@ function rank(rows, type) {
 function v1Dashboard() {
   const rows = active();
   $("#content").innerHTML =
-    `<div class="toolbar"><h2>Visão geral <span class="subtle">· seu ateliê em números</span></h2>${filters()}</div>${cards(rows)}<div class="grid2"><div class="panel"><div class="panel-head"><h2>Vendas & resultados</h2><div class="legend"><span><i class="dot"></i>Vendas</span><span><i class="dot pink"></i>Lucro bruto</span></div></div>${chart(rows)}</div><div class="panel"><div class="panel-head"><h2>Criações favoritas</h2><span class="subtle">por peças</span></div>${rank(rows, "Modelo")}</div></div><div class="grid2"><div class="panel"><div class="panel-head"><h2>Pedidos recentes</h2><a href="#pedidos">Ver todos →</a></div>${ordersTable([...rows].reverse().slice(0, 5))}</div><div class="panel"><div class="panel-head"><h2>Próximas entregas</h2><span>♧</span></div>${
+    `<div class="toolbar"><h2>Visão geral <span class="subtle">· seu ateliê em números</span></h2>${filters()}</div>${cards(rows)}<div class="grid2"><div class="panel"><div class="panel-head"><h2>Vendas & resultados</h2><div class="legend"><span><i class="dot"></i>Vendas</span><span><i class="dot pink"></i>Lucro bruto</span></div></div>${chart(rows)}</div><div class="panel"><div class="panel-head"><h2>Coleções favoritas</h2><select id="favorite-metric" aria-label="Ordenar coleções favoritas"><option value="total">Faturamento</option><option value="quantity">Peças</option><option value="profit">Lucro bruto</option></select></div><div id="favorite-bars"></div></div></div><div class="grid2"><div class="panel"><div class="panel-head"><h2>Pedidos recentes</h2><a href="#pedidos">Ver todos →</a></div>${ordersTable([...rows].reverse().slice(0, 5))}</div><div class="panel"><div class="panel-head"><h2>Próximas entregas</h2><span>♧</span></div>${
       rows
         .filter(
           (o) => o.delivery && !["Entregue", "Cancelado"].includes(o.status),
@@ -222,6 +223,7 @@ function v1Dashboard() {
     }</div></div>`;
   bindFilters();
   bindOrderButtons();
+  bindFavorites(rows);
 }
 function bindOrderButtons() {
   document
@@ -273,7 +275,15 @@ function v1OrderForm(quote = false) {
     $("#cost-lines").innerHTML = draftLines
       .map(
         (l, i) =>
-          `<div class="cost-line"><select aria-label="Item ${i + 1}" data-line="${i}"><option value="">Selecione o item</option>${data.catalog.map((c) => `<option value="${c.id}" ${c.id === l.id ? "selected" : ""}>${esc(c.type)} · ${esc(c.name)}</option>`).join("")}</select><input aria-label="Quantidade do item ${i + 1}" type="number" min="1" step="1" value="${l.quantity}" data-qty="${i}"><button type="button" data-remove="${i}" aria-label="Remover item">×</button></div>`,
+          `<div class="cost-line"><select aria-label="Item ${i + 1}" data-line="${i}"><option value="">Selecione o item</option>${data.catalog
+            .filter((c) => !c.archived)
+            .map(
+              (c) =>
+                `<option value="${c.id}" ${c.id === l.id ? "selected" : ""}>${esc(c.type)} · ${esc(c.name)}</option>`,
+            )
+            .join(
+              "",
+            )}</select><input aria-label="Quantidade do item ${i + 1}" type="number" min="1" step="1" value="${l.quantity}" data-qty="${i}"><button type="button" data-remove="${i}" aria-label="Remover item">×</button></div>`,
       )
       .join("");
     document
@@ -335,16 +345,38 @@ function v1OrderForm(quote = false) {
 function clients() {
   $("#content").innerHTML =
     `<div class="toolbar"><input id="client-search" class="search" placeholder="Pesquisar por nome" aria-label="Pesquisar clientes"><button id="new-client">+ Novo cliente</button></div><div id="client-list" class="panel"></div>`;
+  $("#client-search").insertAdjacentHTML(
+    "afterend",
+    `${filters()}<label>Ordenar clientes<select id="client-ranking"><option value="total">Valor comprado</option><option value="orders">Número de pedidos</option><option value="quantity">Peças</option><option value="last">Última compra</option></select></label>`,
+  );
+  bindFilters();
+  const stats = (c) => {
+    const rows = active().filter((o) => o.clientId === c.id);
+    return {
+      total: sum(rows, "total"),
+      orders: rows.length,
+      quantity: sum(rows, "quantity"),
+      last:
+        rows
+          .map((o) => o.date)
+          .sort()
+          .at(-1) || "",
+    };
+  };
   const draw = () => {
     const q = $("#client-search").value.toLocaleLowerCase();
     $("#client-list").innerHTML =
-      `<div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Contato</th><th>Compras</th><th>Total comprado</th><th>Saldo conhecido / última compra</th><th></th></tr></thead><tbody>${data.clients
+      `<div class="table-wrap"><table><thead><tr><th>Posição</th><th>Cliente</th><th>Contato</th><th>Compras</th><th>Peças</th><th>Total comprado</th><th>Saldo conhecido / última compra</th><th></th></tr></thead><tbody>${data.clients
         .filter((c) => c.name.toLocaleLowerCase().includes(q))
-        .map((c) => {
-          const orders = data.orders.filter(
-            (o) => o.clientId === c.id && o.status !== "Cancelado",
-          );
-          return `<tr><td>${esc(c.name)}</td><td>${esc(c.phone || c.email || "Não informado")}</td><td>${orders.length}</td><td>${brl(sum(orders, "total"))}${orders.length > 1 ? "<small>Cliente recorrente</small>" : ""}</td><td>${brl(orders.reduce((s, o) => s + (finance(o).needsReconciliation ? 0 : finance(o).balance), 0))}<small>${orders.some((o) => finance(o).needsReconciliation) ? "Há pagamentos antigos a conferir · " : ""}${day(
+        .sort((a, b) => {
+          const key = $("#client-ranking").value;
+          return key === "last"
+            ? stats(b).last.localeCompare(stats(a).last)
+            : stats(b)[key] - stats(a)[key];
+        })
+        .map((c, index) => {
+          const orders = active().filter((o) => o.clientId === c.id);
+          return `<tr><td>${index + 1}</td><td>${esc(c.name)}</td><td>${esc(c.phone || c.email || "Não informado")}</td><td>${orders.length}</td><td>${sum(orders, "quantity")}</td><td>${brl(sum(orders, "total"))}${orders.length > 1 ? "<small>Cliente recorrente</small>" : ""}</td><td>${brl(orders.reduce((s, o) => s + (finance(o).needsReconciliation ? 0 : finance(o).balance), 0))}<small>${orders.some((o) => finance(o).needsReconciliation) ? "Há pagamentos antigos a conferir · " : ""}${day(
             orders
               .map((o) => o.date)
               .sort()
@@ -371,6 +403,7 @@ function clients() {
   };
   draw();
   $("#client-search").oninput = draw;
+  $("#client-ranking").onchange = draw;
   $("#new-client").onclick = () => {
     modal(
       `<h2>Novo cliente</h2><p class="subtle">Comece pelo nome. Complete o contato quando precisar.</p><form id="client-form"><div class="form-grid"><label class="wide">Nome<input name="name" required maxlength="150"></label><label>Telefone<input name="phone" type="tel"></label><label>E-mail<input name="email" type="email"></label><label class="wide">Observações<textarea name="notes"></textarea></label></div><div class="actions"><button>Salvar cliente</button></div></form>`,
@@ -398,12 +431,13 @@ function clients() {
 }
 function costs() {
   $("#content").innerHTML =
-    `<div class="toolbar"><h2>Catálogo de custos</h2><button id="new-cost">+ Novo item</button></div><p class="subtle">Cada preço tem uma data de vigência. Reajustes não alteram pedidos já registrados.</p><div class="panel"><div class="table-wrap"><table><thead><tr><th>Item</th><th>Categoria</th><th>Custo vigente hoje</th><th>Histórico</th><th></th></tr></thead><tbody>${data.catalog
+    `<div class="toolbar"><h2>Catálogo de custos</h2><button class="secondary" id="retire-catalog">Conferir itens fictícios</button><button id="new-cost">+ Novo item</button></div><p class="subtle">Cada preço tem uma data de vigência. Reajustes não alteram pedidos já registrados.</p><div class="panel"><div class="table-wrap"><table><thead><tr><th>Item</th><th>Categoria</th><th>Custo vigente hoje</th><th>Histórico</th><th></th></tr></thead><tbody>${data.catalog
+      .filter((c) => !c.archived)
       .map((c) => {
         const p = [...c.prices]
           .filter((p) => p.date <= today())
           .sort((a, b) => b.date.localeCompare(a.date))[0];
-        return `<tr><td>${esc(c.name)}${c.demo ? "<small>Item de demonstração</small>" : ""}</td><td>${esc(c.type)}</td><td>${p ? brl(p.value) : "Sem vigência"}</td><td>${[
+        return `<tr><td>${esc(c.name)}${c.demo ? "<small>Item de demonstração</small>" : ""}</td><td>${esc(c.sourceCategory || c.type)}</td><td>${p ? brl(p.value) : "Sem vigência"}</td><td>${[
           ...c.prices,
         ]
           .sort((a, b) => a.date.localeCompare(b.date))
@@ -414,6 +448,7 @@ function costs() {
       })
       .join("")}</tbody></table></div></div>`;
   $("#new-cost").onclick = () => priceForm();
+  $("#retire-catalog").onclick = retireCatalog;
   document
     .querySelectorAll("[data-price]")
     .forEach(
@@ -634,61 +669,85 @@ function collectionStats(rows) {
   }
   return [...map.values()];
 }
-function collectionsPanel(rows) {
-  const stats = collectionStats(rows),
-    total = sum(rows, "total");
-  return `<div class="panel collection-panel"><div class="panel-head"><h2>Desempenho das coleções</h2><select id="collection-metric" aria-label="Métrica das coleções"><option value="total">Faturamento</option><option value="profit">Lucro bruto</option><option value="quantity">Peças</option></select></div><p class="form-note">Rateio por valor de venda atribuído; custos próprios permanecem no item. Centavos são distribuídos sem duplicar totais.</p><div class="table-wrap"><table><thead><tr><th>Coleção</th><th>Faturamento</th><th>Lucro bruto</th><th>Margem</th><th>Peças</th><th>Participação</th><th>Evolução mensal · faturamento</th></tr></thead><tbody>${stats
-    .map(
-      (c) =>
-        `<tr><td>${esc(c.name)}</td><td>${brl(c.total)}</td><td>${brl(c.total - c.cost)}</td><td>${c.total ? (((c.total - c.cost) / c.total) * 100).toFixed(2) + "%" : "—"}</td><td>${c.quantity}</td><td>${total ? ((c.total / total) * 100).toFixed(2) + "%" : "—"}</td><td>${Object.entries(
-          c.months,
-        )
-          .sort()
-          .map(
-            ([m, n]) => `${m.split("-").reverse().join("/")}: ${brl(n.total)}`,
-          )
-          .join("<br>")}</td></tr>`,
-    )
-    .join(
-      "",
-    )}</tbody></table></div><div id="collection-bars"></div><h3>Evolução mensal por coleção</h3><div id="collection-evolution"></div></div>`;
-}
-function bindCollections(rows) {
-  const el = $("#collection-metric");
-  if (!el) return;
+let collectionChoice = "",
+  collectionMetric = "total",
+  favoriteMetric = "total";
+function bindFavorites(rows) {
+  const select = $("#favorite-metric");
+  if (!select) return;
+  select.value = favoriteMetric;
   const draw = () => {
-    const metric = el.value,
-      stats = collectionStats(rows).map((c) => ({
-        ...c,
-        profit: c.total - c.cost,
-      }));
-    const max = Math.max(...stats.map((c) => Math.abs(c[metric])), 1);
-    $("#collection-bars").innerHTML =
+    favoriteMetric = select.value;
+    const stats = collectionStats(rows)
+      .map((c) => ({ ...c, profit: c.total - c.cost }))
+      .sort((a, b) => b[favoriteMetric] - a[favoriteMetric])
+      .slice(0, 5);
+    const max = Math.max(...stats.map((c) => Math.abs(c[favoriteMetric])), 1);
+    $("#favorite-bars").innerHTML =
       stats
         .map(
           (c) =>
-            `<div class="rank"><div><span>${esc(c.name)}</span><span>${metric === "quantity" ? c.quantity + " peças" : brl(c[metric])}</span></div><div class="track"><i style="width:${(Math.abs(c[metric]) / max) * 100}%;background:${c[metric] < 0 ? "#bb8582" : "#b8c3a9"}"></i></div></div>`,
+            `<div class="rank"><div><span>${esc(c.name)}</span><span>${favoriteMetric === "quantity" ? c.quantity + " peças" : brl(c[favoriteMetric])}</span></div><div class="track"><i style="width:${(Math.abs(c[favoriteMetric]) / max) * 100}%;background:${c[favoriteMetric] < 0 ? "#bb8582" : "#b8c3a9"}"></i></div></div>`,
         )
-        .join("") || '<p class="subtle">Sem dados para este período.</p>';
+        .join("") || "<p>Sem dados no período.</p>";
   };
-  const drawAll = () => {
-    draw();
-    const metric = el.value;
-    $("#collection-evolution").innerHTML = collectionStats(rows)
-      .map((c) => {
-        const values = Object.entries(c.months)
-          .sort()
-          .map(([month, v]) => ({
-            month,
-            value: metric === "profit" ? v.total - v.cost : v[metric],
-          }));
-        const max = Math.max(...values.map((v) => Math.abs(v.value)), 1);
-        return `<details class="history" open><summary>${esc(c.name)}</summary>${values.map((v) => `<div class="rank"><div><span>${v.month.split("-").reverse().join("/")}</span><span>${metric === "quantity" ? v.value + " peças" : brl(v.value)}</span></div><div class="track"><i style="width:${(Math.abs(v.value) / max) * 100}%;background:${v.value < 0 ? "#bb8582" : "#b8c3a9"}"></i></div></div>`).join("")}</details>`;
-      })
-      .join("");
+  select.onchange = draw;
+  draw();
+}
+function collectionsPanel(rows) {
+  return `<div class="panel collection-panel"><div class="panel-head"><h2>Desempenho das coleções</h2><label>Coleção<select id="collection-choice"><option value="">Todas</option>${collectionStats(
+    rows,
+  )
+    .map(
+      (c) =>
+        `<option ${collectionChoice === c.name ? "selected" : ""}>${esc(c.name)}</option>`,
+    )
+    .join(
+      "",
+    )}</select></label><label>Ordenar<select id="collection-metric" aria-label="Métrica das coleções">${[
+    ["total", "Faturamento"],
+    ["profit", "Lucro bruto"],
+    ["margin", "Margem"],
+    ["quantity", "Peças"],
+  ]
+    .map(
+      ([v, l]) =>
+        `<option value="${v}" ${v === collectionMetric ? "selected" : ""}>${l}</option>`,
+    )
+    .join(
+      "",
+    )}</select></label></div><p class="form-note">O período selecionado acima vale para as coleções. Participação sobre o faturamento geral do período. Comparações anuais usam o mesmo nome de coleção e somente os meses selecionados; ausência de dados não significa queda nas vendas.</p><div id="collection-table"></div></div>`;
+}
+function bindCollections(rows) {
+  if (!$("#collection-metric")) return;
+  const draw = () => {
+    collectionChoice = $("#collection-choice").value;
+    collectionMetric = $("#collection-metric").value;
+    const stats = collectionStats(rows)
+      .map((c) => ({
+        ...c,
+        profit: c.total - c.cost,
+        margin: c.total ? ((c.total - c.cost) / c.total) * 100 : 0,
+      }))
+      .filter((c) => !collectionChoice || c.name === collectionChoice)
+      .sort((a, b) => b[collectionMetric] - a[collectionMetric]);
+    const total = sum(rows, "total");
+    $("#collection-table").innerHTML =
+      `<div class="table-wrap"><table><thead><tr><th>Coleção</th><th>Faturamento</th><th>Lucro bruto</th><th>Margem</th><th>Peças</th><th>Participação</th><th>Edições anuais</th></tr></thead><tbody>${stats
+        .map((c) => {
+          const years = {};
+          for (const [m, v] of Object.entries(c.months)) {
+            const y = m.slice(0, 4);
+            years[y] = (years[y] || 0) + v.total;
+          }
+          const keys = Object.keys(years).sort();
+          return `<tr><td>${esc(c.name)}</td><td>${brl(c.total)}</td><td>${brl(c.profit)}</td><td>${c.total ? c.margin.toFixed(2) + "%" : "—"}</td><td>${c.quantity}</td><td>${total ? ((c.total / total) * 100).toFixed(2) + "%" : "—"}</td><td>${keys.map((y, i) => `${y}: ${brl(years[y])}${i && Number(y) === Number(keys[i - 1]) + 1 && years[keys[i - 1]] ? " · " + ((years[y] / years[keys[i - 1]] - 1) * 100).toFixed(1) + "% ante " + keys[i - 1] : ""}`).join("<br>")}${keys.length < 2 ? "<small>Sem outra edição anual no período</small>" : ""}</td></tr>`;
+        })
+        .join("")}</tbody></table></div>`;
   };
-  el.onchange = drawAll;
-  drawAll();
+  $("#collection-choice").onchange = draw;
+  $("#collection-metric").onchange = draw;
+  draw();
 }
 function cashPanel() {
   const eligible = data.orders.filter((o) => o.demo !== true);
@@ -714,15 +773,17 @@ function dashboard() {
   v1Dashboard();
   $("#content").insertAdjacentHTML(
     "beforeend",
-    cashPanel() + collectionsPanel(active()),
+    cashPanel() + financialPanel() + collectionsPanel(active()),
   );
   bindCollections(active());
+  bindFinancial();
 }
 function reports() {
   v1Reports();
   $("#content").insertAdjacentHTML(
     "beforeend",
     cashPanel() +
+      financialPanel() +
       collectionsPanel(active()) +
       `<div class="panel"><h2>Histórico de recebimentos</h2><div class="table-wrap"><table><thead><tr><th>Cliente</th><th>Data</th><th>Movimento</th><th>Valor</th><th>Forma / motivo</th></tr></thead><tbody>${data.payments
         .filter(
@@ -738,6 +799,7 @@ function reports() {
         .join("")}</tbody></table></div></div>`,
   );
   bindCollections(active());
+  bindFinancial();
 }
 function orders() {
   v1Orders();
@@ -810,6 +872,16 @@ function orderDetail(id) {
     arts = data.artworks.filter((a) => a.orderId === id);
   modal(
     `<h2>Detalhes do pedido</h2><p>${esc(clientName(o.clientId))} · ${badge(o.status)} · ${deliveryState(o)}</p><p>Pedido: ${day(o.date)} · Entrega: ${day(o.delivery)} · ${o.quantity} peças</p><p>${esc(o.theme)}<br>${esc(o.description)}<br>${esc(o.notes)}</p>${costBreakdown(o)}<div class="result"><div>Recebido líquido<strong>${brl(f.received)}</strong></div><div>Saldo conhecido<strong>${f.needsReconciliation ? "Conferir histórico" : brl(f.balance)}</strong></div><div>Pagamento<strong>${esc(f.payment)}</strong></div></div>${f.needsReconciliation ? `<p class="error">Status antigo: ${esc(f.legacyPayment)}. Não há valor e data de recebimento registrados. Confira os comprovantes antes de lançar.</p>` : ""}${f.refundDue ? `<p class="error">Cancelado com ${brl(f.refundDue)} a devolver. Registre o estorno somente quando o dinheiro for devolvido.</p>` : ""}<div class="actions"><button class="secondary" id="edit-order" ${o.status === "Cancelado" ? "disabled" : ""}>Editar pedido</button><button id="payment-order">Recebimentos / estornos</button><button class="secondary" id="cancel-order" ${o.status === "Cancelado" ? "disabled" : ""}>Cancelar pedido</button></div><h3>Histórico de recebimentos</h3>${payments.map((p) => `<div class="history">${day(p.date)} · ${p.type === "receipt" ? p.label || "Recebimento" : "Estorno"} · ${brl(p.value)} · ${esc(p.method)}<br>${esc(p.reason)}</div>`).join("") || '<p class="subtle">Nenhum recebimento comprovado registrado.</p>'}<h3>Artes da personalização</h3><div class="art-grid">${arts.map((a) => `<article class="history"><img class="art-thumb" src="/api/v2/orders/${o.id}/artworks/${a.id}/file" alt="${esc(a.name)}"><p>${esc(a.name)} · ${esc(a.status)}${a.approvedOn ? " · Aprovada em " + day(a.approvedOn) : ""}</p><button class="secondary" data-art="${a.id}">Versões e aprovação</button></article>`).join("")}</div><form id="art-upload"><label>Adicionar imagem privada (PNG, JPG, WebP, até 8 MB)<input type="file" name="file" accept=".png,.jpg,.jpeg,.webp" required></label><div class="actions"><button ${o.status === "Cancelado" ? "disabled" : ""}>Anexar arte</button></div></form><h3>Histórico de alterações</h3>${history.map((h) => `<details class="history"><summary>${esc(new Date(h.at).toLocaleString("pt-BR"))} · ${esc(h.action)} · ${esc(h.reason)}</summary><p>Venda: ${brl(h.before.total)} → ${brl(h.after.total)} · Custo: ${brl(h.before.cost)} → ${brl(h.after.cost)}</p><pre>${esc(JSON.stringify({ antes: h.before, depois: h.after }, null, 2))}</pre></details>`).join("") || '<p class="subtle">Sem alterações registradas.</p>'}`,
+  );
+  $("#modal-content .actions").insertAdjacentHTML(
+    "beforeend",
+    `<button type="button" id="purchase-document">Gerar Pedido de Compra (PDF)</button><button type="button" class="secondary" id="order-expense">Registrar despesa vinculada</button>`,
+  );
+  $("#purchase-document").onclick = () => documentForm(o);
+  $("#order-expense").onclick = () => expenseForm(null, o.id);
+  $("#modal-content .result").insertAdjacentHTML(
+    "afterend",
+    profitPreview(o, o.id, false),
   );
   $("#edit-order").onclick = () => {
     $("#modal").close();
@@ -958,13 +1030,21 @@ function orderForm(quote = false, old = null) {
   const inputField = (label, name, value = "", type = "text", extra = "") =>
     `<label>${label}<input name="${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
   modal(
-    `<h2>${old ? "Editar pedido" : "Novo pedido"}</h2><p class="subtle">Quantidades de materiais referem-se ao pedido inteiro. A revisão financeira exige conferência e confirmação.</p><form id="v2-order-form"><div class="form-grid"><label class="wide">Cliente<select name="clientId" required><option value="">Selecione</option>${data.clients.map((c) => `<option value="${c.id}" ${c.id === old?.clientId ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>${inputField("Data do pedido", "date", old?.date || today(), "date", "required")}${inputField("Data de entrega (opcional)", "delivery", old?.delivery || "", "date")}${inputField("Tema / arte personalizada", "theme", old?.theme || "")}<label>Produção<select name="status">${["Aberto", "Em produção", "Pronto", "Entregue"].map((s) => `<option ${s === old?.status ? "selected" : ""}>${s}</option>`).join("")}</select></label><label class="wide">Descrição da personalização<textarea name="description">${esc(old?.description || "")}</textarea></label><label class="wide">Observações<textarea name="notes">${esc(old?.notes || "")}</textarea></label></div>${old ? '<p><label><input type="checkbox" id="financial-edit"> Revisar composição, valores ou coleções (alteração financeira)</label></p>' : ""}<fieldset id="financial-fields" ${old ? "disabled" : ""}><legend>Fotografia financeira e itens</legend><div class="form-grid"><label>Unidade<select name="unit"><option ${old?.unit !== "Kits" ? "selected" : ""}>Peças</option><option ${old?.unit === "Kits" ? "selected" : ""}>Kits</option></select></label>${inputField("Quantidade de kits ou peças", "amount", old?.amount || old?.quantity || 1, "number", 'min="1" step="1" required')}${inputField("Peças por kit", "piecesPerKit", old?.piecesPerKit || 1, "number", 'min="1" step="1" required')}${inputField("Valor total da venda (R$)", "total", old?.total ?? "", "number", 'min="0" step="0.01" required')}${inputField("Desconto geral (R$)", "discount", old?.discount || 0, "number", 'min="0" step="0.01" required')}</div><h3>Modelos, embalagens e até oito complementos</h3><div id="v2-lines"></div><button type="button" class="secondary" id="v2-add-line">+ Adicionar item</button><p class="form-note">Para cada modelo, informe coleção e valor de venda atribuído ao conjunto de unidades dessa linha, antes do desconto geral. É permitido repetir um modelo em coleções diferentes. Materiais comuns são rateados proporcionalmente às vendas; se todas forem zero, pelo número de peças.</p><div class="form-grid">${inputField("Impressão — custo total (R$)", "printing", old?.printing || 0, "number", 'min="0" step="0.01" required')}${inputField("Taxas — total (R$)", "fees", old?.fees || 0, "number", 'min="0" step="0.01" required')}${inputField("Frete — custo total (R$)", "shipping", old?.shipping || 0, "number", 'min="0" step="0.01" required')}</div><h3>Outras despesas identificadas</h3><div id="v2-expenses"></div><button type="button" class="secondary" id="v2-add-expense">+ Adicionar despesa</button><p><label><input type="checkbox" name="confirmCosts" id="confirm-costs"> Conferi e autorizo os custos unitários que marquei para revisão explícita.</label></p></fieldset>${old ? inputField("Motivo da alteração", "reason", "", "text", "required") : '<p><label><input type="checkbox" name="demo" checked> Pedido fictício de teste</label></p>'}<div id="calculation"></div><div class="actions"><button type="button" class="secondary" id="v2-calculate">Conferir custos e rateio</button><button>${old ? "Conferir e salvar revisão" : "Salvar pedido"}</button></div></form>`,
+    `<h2>${old ? "Editar pedido" : "Novo pedido"}</h2><p class="subtle">Quantidades de materiais referem-se ao pedido inteiro. A revisão financeira exige conferência e confirmação.</p><form id="v2-order-form"><div class="form-grid"><label class="wide">Cliente<select name="clientId" required><option value="">Selecione</option>${data.clients.map((c) => `<option value="${c.id}" ${c.id === old?.clientId ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></label>${inputField("Data do pedido", "date", old?.date || today(), "date", "required")}${inputField("Data de entrega (opcional)", "delivery", old?.delivery || "", "date")}${inputField("Tema / arte personalizada", "theme", old?.theme || "")}<label>Produção<select name="status">${["Aberto", "Em produção", "Pronto", "Entregue"].map((s) => `<option ${s === old?.status ? "selected" : ""}>${s}</option>`).join("")}</select></label><label class="wide">Descrição da personalização<textarea name="description">${esc(old?.description || "")}</textarea></label><label class="wide">Observações<textarea name="notes">${esc(old?.notes || "")}</textarea></label></div>${old ? '<p><label><input type="checkbox" id="financial-edit"> Revisar composição, valores ou coleções (alteração financeira)</label></p>' : ""}<fieldset id="financial-fields" ${old ? "disabled" : ""}><legend>Fotografia financeira e itens</legend><div class="form-grid"><label>Unidade<select name="unit"><option ${old?.unit !== "Kits" ? "selected" : ""}>Peças</option><option ${old?.unit === "Kits" ? "selected" : ""}>Kits</option></select></label>${inputField("Quantidade de kits ou peças", "amount", old?.amount || old?.quantity || 1, "number", 'min="1" step="1" required')}${inputField("Peças por kit", "piecesPerKit", old?.piecesPerKit || 1, "number", 'min="1" step="1" required')}${inputField("Valor total da venda (R$)", "total", old?.total ?? "", "number", 'min="0" step="0.01" required')}${inputField("Desconto geral (R$)", "discount", old?.discount || 0, "number", 'min="0" step="0.01" required')}</div><h3>Modelos, embalagens e até oito complementos</h3><div id="v2-lines"></div><button type="button" class="secondary" id="v2-add-line">+ Adicionar item</button><p class="form-note">Para cada modelo, informe coleção e valor de venda atribuído ao conjunto de unidades dessa linha, antes do desconto geral. É permitido repetir um modelo em coleções diferentes. Materiais comuns são rateados proporcionalmente às vendas; se todas forem zero, pelo número de peças.</p><div class="form-grid">${inputField("Impressão — custo total (R$)", "printing", old?.printing || 0, "number", 'min="0" step="0.01" required')}${inputField("Taxas — total (R$)", "fees", old?.fees || 0, "number", 'min="0" step="0.01" required')}${inputField("Frete — custo total (R$)", "shipping", old?.shipping || 0, "number", 'min="0" step="0.01" required')}</div><h3>Outras despesas identificadas</h3><div id="v2-expenses"></div><button type="button" class="secondary" id="v2-add-expense">+ Adicionar despesa</button><p><label><input type="checkbox" name="confirmCosts" id="confirm-costs"> Conferi e autorizo os custos unitários que marquei para revisão explícita.</label></p></fieldset>${old ? inputField("Motivo da alteração", "reason", "", "text", "required") : '<p><label><input type="checkbox" name="demo"> Pedido fictício de teste</label></p>'}<div id="calculation"></div><div class="actions"><button type="button" class="secondary" id="v2-calculate">Conferir custos e rateio</button><button>${old ? "Conferir e salvar revisão" : "Salvar pedido"}</button></div></form>`,
   );
   const renderLines = () => {
     $("#v2-lines").innerHTML = state.lines
       .map((l, i) => {
         const type = data.catalog.find((c) => c.id === l.id)?.type || l.type;
-        return `<div class="line-editor"><div class="cost-line"><select aria-label="Item ${i + 1}" data-index="${i}" data-property="id"><option value="">Selecione o item</option>${!data.catalog.some((c) => c.id === l.id) && l.id ? `<option value="${esc(l.id)}" selected>${esc(l.name)} (histórico)</option>` : ""}${data.catalog.map((c) => `<option value="${c.id}" ${l.id === c.id ? "selected" : ""}>${esc(c.type)} · ${esc(c.name)}</option>`).join("")}</select><input aria-label="Quantidade do item ${i + 1}" type="number" min="1" step="1" value="${l.quantity}" data-index="${i}" data-property="quantity"><button type="button" data-delete-line="${i}" aria-label="Remover item ${i + 1}">×</button></div>${type === "Modelo" ? `<div class="form-grid"><label>Coleção do item ${i + 1}<input value="${esc(l.collection)}" data-index="${i}" data-property="collection"></label><label>Venda atribuída ao item ${i + 1} (R$)<input type="number" min="0" step="0.01" value="${l.sale}" data-index="${i}" data-property="sale"></label></div>` : ""}<p class="form-note">${l.unit === null ? "Custo histórico unitário desconhecido." : l.unit !== undefined ? "Custo unitário histórico: " + brl(l.unit) : "Novo item: custo da vigência na data do pedido."}</p><label><input type="checkbox" data-revise="${i}" ${l.reviseCost ? "checked" : ""}> Revisar explicitamente custo unitário</label>${l.reviseCost ? `<label>Novo custo unitário (R$)<input type="number" min="0" step="0.01" value="${l.unit ?? ""}" data-index="${i}" data-property="unit"></label>` : ""}</div>`;
+        return `<div class="line-editor"><div class="cost-line"><select aria-label="Item ${i + 1}" data-index="${i}" data-property="id"><option value="">Selecione o item</option>${!data.catalog.some((c) => c.id === l.id && !c.archived) && l.id ? `<option value="${esc(l.id)}" selected>${esc(l.name)} (histórico)</option>` : ""}${data.catalog
+          .filter((c) => !c.archived)
+          .map(
+            (c) =>
+              `<option value="${c.id}" ${l.id === c.id ? "selected" : ""}>${esc(c.type)} · ${esc(c.name)}</option>`,
+          )
+          .join(
+            "",
+          )}</select><input aria-label="Quantidade do item ${i + 1}" type="number" min="1" step="1" value="${l.quantity}" data-index="${i}" data-property="quantity"><button type="button" data-delete-line="${i}" aria-label="Remover item ${i + 1}">×</button></div>${type === "Modelo" ? `<div class="form-grid"><label>Coleção do item ${i + 1}<input value="${esc(l.collection)}" data-index="${i}" data-property="collection"></label><label>Venda atribuída ao item ${i + 1} (R$)<input type="number" min="0" step="0.01" value="${l.sale}" data-index="${i}" data-property="sale"></label></div>` : ""}<p class="form-note">${l.unit === null ? "Custo histórico unitário desconhecido." : l.unit !== undefined ? "Custo unitário histórico: " + brl(l.unit) : "Novo item: custo da vigência na data do pedido."}</p><label><input type="checkbox" data-revise="${i}" ${l.reviseCost ? "checked" : ""}> Revisar explicitamente custo unitário</label>${l.reviseCost ? `<label>Novo custo unitário (R$)<input type="number" min="0" step="0.01" value="${l.unit ?? ""}" data-index="${i}" data-property="unit"></label>` : ""}</div>`;
       })
       .join("");
     document.querySelectorAll("[data-property]").forEach(
@@ -1047,7 +1127,7 @@ function orderForm(quote = false, old = null) {
         return;
       }
       const r = await api("v2/quote", { ...draft(), orderId: old?.id });
-      $("#calculation").innerHTML = costBreakdown(r);
+      $("#calculation").innerHTML = profitPreview(r, old?.id);
     } catch (e) {
       $("#calculation").innerHTML = `<p class="error">${esc(e.message)}</p>`;
     }
@@ -1058,10 +1138,10 @@ function orderForm(quote = false, old = null) {
       const financial = $("#financial-edit").checked;
       if (financial) {
         const result = await api("v2/quote", { ...d, orderId: old.id });
-        $("#calculation").innerHTML = costBreakdown(result);
+        $("#calculation").innerHTML = profitPreview(result, old.id);
         if (
           !window.confirm(
-            `Confirmar revisão financeira? Venda: ${brl(old.total)} → ${brl(result.total)}. Custo: ${brl(old.cost)} → ${brl(result.cost)}. O histórico anterior será preservado.`,
+            `${marginWarning(result, old.id)}Confirmar revisão financeira? Venda: ${brl(old.total)} → ${brl(result.total)}. Custo: ${brl(old.cost)} → ${brl(result.cost)}. O histórico anterior será preservado.`,
           )
         )
           return;
@@ -1079,10 +1159,11 @@ function orderForm(quote = false, old = null) {
       );
     } else {
       const result = await api("v2/quote", d);
-      $("#calculation").innerHTML = costBreakdown(result);
+      $("#calculation").innerHTML = profitPreview(result);
       if (
         !window.confirm(
-          "Conferiu os itens e o rateio? Salvar venda de " +
+          marginWarning(result) +
+            "Conferiu os itens, despesas e o lucro? Salvar venda de " +
             brl(result.total) +
             " e custo de " +
             brl(result.cost) +
@@ -1103,7 +1184,7 @@ function showImport() {
   v1ShowImport();
   $("#import-preview").insertAdjacentHTML(
     "beforeend",
-    `<div class="import-step"><h2>Materiais e histórico de custos</h2><p>Selecione uma aba e associe nome, categoria (Modelo, Embalagem ou Complemento), custo e vigência. Não inferimos datas nem categorias.</p><div class="mapping">${[
+    `<div class="import-step"><h2>Materiais e histórico de custos</h2><p>Selecione a aba Custos e associe nome, categoria, custo e vigência. Relacione as categorias da planilha aos grupos Modelo, Embalagem ou Complemento; a categoria original será preservada. Não inferimos datas. Fórmulas usam os resultados armazenados pelo Excel: confira a prévia antes de autorizar.</p><div class="mapping">${[
       ["name", "Nome"],
       ["type", "Categoria"],
       ["value", "Custo"],
@@ -1115,7 +1196,7 @@ function showImport() {
       )
       .join(
         "",
-      )}</div><div class="actions"><button id="check-materials">Conferir materiais</button></div><div id="material-result"></div></div>`,
+      )}</div><label>Última linha de materiais (opcional, para excluir totais e notas)<input id="materials-last-row" type="number" min="2"></label><div id="material-category-map" class="mapping"></div><div class="actions"><button id="check-materials">Conferir materiais</button></div><div id="material-result"></div></div>`,
   );
   const refreshMaterials = () => {
     const sheet = importState.sheets.find((s) => s.name === $("#sheet").value),
@@ -1135,11 +1216,43 @@ function showImport() {
   $("#sheet").addEventListener("change", refreshMaterials);
   $("#header-row").addEventListener("change", refreshMaterials);
   refreshMaterials();
+  const mapCategories = () => {
+    $("#material-result").innerHTML = "";
+    const sheet = importState.sheets.find((s) => s.name === $("#sheet").value),
+      col = $('[data-material="type"]').value;
+    const names =
+      col === ""
+        ? []
+        : [
+            ...new Set(
+              sheet.rows
+                .slice(Number($("#header-row").value))
+                .map((r) => String(r[Number(col)] || "").trim())
+                .filter(Boolean),
+            ),
+          ];
+    $("#material-category-map").innerHTML = names
+      .map(
+        (name, i) =>
+          `<label>Categoria “${esc(name)}” no catálogo<select data-category-index="${i}"><option value="">Reconhecer automaticamente</option><option>Modelo</option><option>Embalagem</option><option>Complemento</option></select></label>`,
+      )
+      .join("");
+    document.querySelectorAll("[data-category-index]").forEach((el) => {
+      el.dataset.source = names[Number(el.dataset.categoryIndex)];
+      el.onchange = () => ($("#material-result").innerHTML = "");
+    });
+  };
   document
     .querySelectorAll("[data-material]")
-    .forEach(
-      (el) => (el.onchange = () => ($("#material-result").innerHTML = "")),
-    );
+    .forEach((el) => (el.onchange = mapCategories));
+  $("#materials-last-row").oninput = () => {
+    $("#material-result").innerHTML = "";
+  };
+  $("#sheet").addEventListener("change", () => {
+    $("#materials-last-row").value = "";
+    mapCategories();
+  });
+  $("#header-row").addEventListener("change", mapCategories);
   $("#check-materials").onclick = async () => {
     try {
       const body = {
@@ -1153,6 +1266,12 @@ function showImport() {
           ]),
         ),
       };
+      body.lastRow = $("#materials-last-row").value;
+      body.categoryMapping = Object.fromEntries(
+        [...document.querySelectorAll("[data-category-index]")]
+          .filter((el) => el.value)
+          .map((el) => [el.dataset.source, el.value]),
+      );
       const result = await api("import/materials/check", body);
       $("#material-result").innerHTML =
         `<div class="table-wrap"><table><thead><tr><th>Linha</th><th>Material</th><th>Categoria</th><th>Custo</th><th>Vigência / pendência</th></tr></thead><tbody>${result.rows.map((r) => (r.valid ? `<tr><td>${r.line}</td><td>${esc(r.name)}</td><td>${esc(r.type)}</td><td>${brl(r.value)}</td><td>${day(r.date)}</td></tr>` : `<tr><td>${r.line}</td><td colspan="4">${esc(r.error)}</td></tr>`)).join("")}</tbody></table></div><p><label><input id="materials-consent" type="checkbox"> Conferi e autorizo importar os materiais apresentados.</label></p><button id="confirm-materials" disabled>Confirmar importação de materiais</button>`;
@@ -1233,6 +1352,314 @@ pages.backups = [
   "Cópias privadas, verificadas e sem sobrescrever o original.",
 ];
 
+pages.despesas = [
+  "↙",
+  "Despesas e compras",
+  "Gastos do ateliê",
+  "Compras, operação e equipamentos, com histórico.",
+];
+pages.agenda = [
+  "▦",
+  "Agenda",
+  "Produção e entregas",
+  "Datas previstas sempre ligadas aos seus pedidos.",
+];
+pages.configuracoes = [
+  "✧",
+  "Configurações",
+  "Seu jeito de encantar",
+  "Margem e informações comerciais guardadas neste computador.",
+];
+let expenseCategory = "",
+  expenseKind = "",
+  expenseStatus = "",
+  financeCategory = "";
+function marginWarning(o, id) {
+  const r = orderResult({ ...o, id }, data.expenses);
+  return r.margin === null
+    ? "Margem indefinida. Revise a venda antes de confirmar. "
+    : r.margin < data.settings.lowMargin
+      ? `ATENÇÃO: margem de ${r.margin}% abaixo do limite de ${data.settings.lowMargin}%. Revise os valores antes de confirmar. `
+      : "";
+}
+function profitPreview(o, id, breakdown = true) {
+  const r = orderResult({ ...o, id: id || o.id }, data.expenses);
+  return `${breakdown ? costBreakdown(o) : ""}<h3>Conferência do resultado gerencial</h3><p>Materiais: ${brl(sum(o.lines, "total"))} · Despesas extras já incluídas no custo: ${brl(o.extra || 0)}. A composição histórica desconhecida permanece sem estimativa.</p>${r.linked.map((e) => `<p>${esc(e.description)} · ${brl(e.value)} (adicional vinculado)</p>`).join("")}<div class="result"><div>Despesas vinculadas adicionais<strong>${brl(r.additional)}</strong></div><div>Custo gerencial total<strong>${brl(r.cost)}</strong></div><div>Lucro estimado<strong>${brl(r.profit)}</strong></div><div>Margem gerencial<strong>${r.margin === null ? "Indefinida" : r.margin + "%"}</strong></div></div>${marginWarning(o, id || o.id) ? `<p class="error">${esc(marginWarning(o, id || o.id))}</p>` : ""}<p class="form-note">Despesas marcadas como já incluídas não são descontadas novamente. Usar materiais não cria pagamento no caixa.</p>`;
+}
+function financialPanel() {
+  return `<div class="panel"><div class="panel-head"><h2>Lucro e caixa</h2><label>Categoria de despesas<select id="finance-category"><option value="">Todas</option>${[...new Set(data.expenses.map((e) => e.category))].map((c) => `<option ${financeCategory === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label></div><div id="finance-cards"></div><p class="form-note">Lucro gerencial = faturamento − custos salvos dos pedidos − despesas operacionais adicionais. Compras de materiais e equipamentos afetam somente o caixa quando pagas; não são deduzidas outra vez do lucro. Despesas vinculadas adicionais acompanham a data da venda; as demais, a data da despesa. Caixa usa a data efetiva de pagamento/recebimento e inclui estornos. A categoria filtra despesas e suas saídas, mantendo o faturamento geral.</p><p class="form-note">Sem estoque, depreciação ou conciliação bancária automática. Estes indicadores são estimativas gerenciais: não calculam estoque ou saldo bancário inicial. Despesas já incluídas no pedido não são deduzidas novamente. Cancelar um gasto pago preserva sua saída efetiva de caixa; não presume devolução. Pagamentos antigos a conferir permanecem sem recebimento presumido.</p></div>`;
+}
+function bindFinancial() {
+  const el = $("#finance-category");
+  if (!el) return;
+  const draw = () => {
+    financeCategory = el.value;
+    const r = financialSummary(data.orders, data.expenses, data.payments, {
+      ...range,
+      category: financeCategory,
+    });
+    $("#finance-cards").innerHTML = `<div class="cards">${[
+      ["Faturamento", r.revenue],
+      ["Custos dos pedidos vendidos", r.costs],
+      ["Lucro bruto", r.gross],
+      ["Despesas adicionais", r.additional],
+      ["Lucro líquido gerencial estimado", r.net],
+      ["Entradas efetivamente recebidas", r.receipts],
+      ["Saídas efetivamente pagas", r.paid + r.refunds],
+      ["Saldo de caixa do período", r.cash],
+    ]
+      .map(
+        ([label, n]) =>
+          `<div class="card"><label>${label}</label><strong>${brl(n)}</strong></div>`,
+      )
+      .join("")}</div>`;
+  };
+  el.onchange = draw;
+  draw();
+}
+function expensesPage() {
+  $("#content").innerHTML =
+    `<div class="toolbar">${filters()}<button id="new-expense">+ Novo lançamento</button></div><div class="filters"><label>Tipo<select id="expense-kind"><option value="">Todos</option>${["Materiais", "Operacional", "Equipamentos"].map((k) => `<option ${expenseKind === k ? "selected" : ""}>${k}</option>`).join("")}</select></label><label>Categoria<select id="expense-category"><option value="">Todas</option>${[...new Set(data.expenses.map((e) => e.category))].map((k) => `<option ${expenseCategory === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select></label><label>Situação<select id="expense-status"><option value="">Todas</option>${["Pago", "Pendente", "Cancelado"].map((k) => `<option ${expenseStatus === k ? "selected" : ""}>${k}</option>`).join("")}</select></label></div><p class="form-note">O período desta lista usa a data do lançamento. No painel, o caixa usa a data de pagamento. Não há controle de estoque.</p><div class="panel" id="expense-list"></div>`;
+  bindFilters();
+  $("#new-expense").onclick = () => expenseForm();
+  const draw = () => {
+    expenseKind = $("#expense-kind").value;
+    expenseCategory = $("#expense-category").value;
+    expenseStatus = $("#expense-status").value;
+    const rows = data.expenses
+      .filter(
+        (e) =>
+          (!range.from || e.date >= range.from) &&
+          (!range.to || e.date <= range.to) &&
+          (!expenseKind || e.kind === expenseKind) &&
+          (!expenseCategory || e.category === expenseCategory) &&
+          (!expenseStatus ||
+            (expenseStatus === "Cancelado"
+              ? e.cancelled
+              : !e.cancelled && e.status === expenseStatus)),
+      )
+      .sort((a, b) => b.date.localeCompare(a.date));
+    $("#expense-list").innerHTML =
+      `<div class="table-wrap"><table><thead><tr><th>Data</th><th>Descrição / categoria</th><th>Tipo</th><th>Valor</th><th>Situação / pagamento</th><th>Pedido / tratamento</th><th></th></tr></thead><tbody>${rows.map((e) => `<tr><td>${day(e.date)}</td><td>${esc(e.description)}<small>${esc(e.category)}</small></td><td>${e.kind}</td><td>${brl(e.value)}</td><td>${e.cancelled ? "Cancelado · " : ""}${e.status}<small>${day(e.paidDate)} · ${esc(e.method)}</small></td><td>${e.orderId ? esc(clientName(data.orders.find((o) => o.id === e.orderId)?.clientId)) : "Geral"}<small>${e.treatment === "included" ? "Já incluída no custo" : e.kind === "Operacional" ? "Operacional adicional" : "Somente caixa"}</small></td><td><button class="secondary" data-expense="${e.id}">${e.cancelled ? "Histórico" : "Ver / editar"}</button></td></tr>`).join("")}</tbody></table></div>${rows.length ? "" : "<p>Nenhum lançamento neste período.</p>"}`;
+    document
+      .querySelectorAll("[data-expense]")
+      .forEach(
+        (b) =>
+          (b.onclick = () =>
+            expenseForm(data.expenses.find((e) => e.id === b.dataset.expense))),
+      );
+  };
+  ["kind", "category", "status"].forEach(
+    (k) => ($("#expense-" + k).onchange = draw),
+  );
+  draw();
+}
+function expenseForm(old = null, orderId = "") {
+  const value = (k, d = "") => esc(old?.[k] ?? d);
+  const field = (label, k, type = "text", fallback = "", extra = "") =>
+    `<label>${label}<input name="${k}" type="${type}" value="${value(k, fallback)}" ${extra}></label>`;
+  const h = data.expenseHistory.filter(
+    (h) => h.kind === "expense" && h.entityId === old?.id,
+  );
+  const content = `<h2>${old ? "Lançamento e histórico" : "Nova despesa ou compra"}</h2><form id="expense-form"><fieldset ${old?.cancelled ? "disabled" : ""}><div class="form-grid">${field("Data", "date", "date", today(), "required")}${field("Descrição", "description", "text", "", 'required maxlength="500"')}<label>Tipo<select name="kind">${["Materiais", "Operacional", "Equipamentos"].map((k) => `<option ${old?.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select></label>${field("Categoria", "category", "text", "", 'required maxlength="100"')}${field("Valor total (R$)", "value", "number", "", 'required min="0.01" step="0.01"')}<label>Situação<select name="status">${["Pendente", "Pago"].map((k) => `<option ${old?.status === k ? "selected" : ""}>${k}</option>`).join("")}</select></label>${field("Data do pagamento (se pago)", "paidDate", "date")}${field("Forma de pagamento (se pago)", "method")}<label>Pedido relacionado<select name="orderId"><option value="">Geral / sem pedido</option>${data.orders
+    .filter((o) => !o.demo)
+    .map(
+      (o) =>
+        `<option value="${o.id}" ${(old?.orderId || orderId) === o.id ? "selected" : ""}>${esc(clientName(o.clientId))} · ${day(o.date)} · ${esc(o.theme)} · ${o.id.slice(0, 8)}</option>`,
+    )
+    .join(
+      "",
+    )}</select></label><label>Reconhecimento no lucro<select name="treatment"><option value="additional">Adicional operacional / compras somente no caixa</option><option value="included" ${old?.treatment === "included" ? "selected" : ""}>Já incluída no custo do pedido</option></select></label><label class="wide">Despesa já incluída no pedido<select name="includedIndex" id="included-choice"></select></label><label class="wide">Observações<textarea name="notes">${value("notes")}</textarea></label>${old ? field("Motivo da alteração", "reason", "text", "", "required") : ""}</div><p class="form-note">Material comprado: registre o valor integral pago, sem criar outro desembolso ao usar o material. Uber já lançado em “Outras despesas” do pedido: escolha “Já incluída”, selecione a linha correspondente e preserve descrição e valor. Uma despesa adicional vinculada reduz o resultado do pedido uma vez.</p><div class="actions"><button>Salvar lançamento</button>${old ? '<button type="button" class="secondary" id="cancel-expense">Cancelar lançamento</button>' : ""}</div></fieldset></form><h3>Histórico</h3>${h.map((v) => `<details class="history"><summary>${esc(new Date(v.at).toLocaleString("pt-BR"))} · ${esc(v.reason)}</summary><pre>${esc(JSON.stringify({ antes: v.before, depois: v.after }, null, 2))}</pre></details>`).join("") || "<p>Sem alterações anteriores.</p>"}`;
+  if ($("#modal").open) $("#modal-content").innerHTML = content;
+  else modal(content);
+  const form = $("#expense-form");
+  const refresh = () => {
+    const o = data.orders.find((o) => o.id === form.elements.orderId.value);
+    $("#included-choice").innerHTML =
+      '<option value="">Não se aplica</option>' +
+      (o?.expenses || [])
+        .map(
+          (e, i) =>
+            `<option value="${i}" ${old?.includedIndex === i ? "selected" : ""}>${esc(e.description)} · ${brl(e.value)}</option>`,
+        )
+        .join("");
+    $("#included-choice").disabled =
+      form.elements.treatment.value !== "included";
+  };
+  form.elements.orderId.onchange = refresh;
+  form.elements.treatment.onchange = refresh;
+  refresh();
+  $("#included-choice").onchange = () => {
+    const o = data.orders.find((o) => o.id === form.elements.orderId.value),
+      e = o?.expenses?.[Number($("#included-choice").value)];
+    if (e) {
+      form.elements.description.value = e.description;
+      form.elements.value.value = e.value;
+      form.elements.kind.value = "Operacional";
+    }
+  };
+  bindForm("#expense-form", async (f) => {
+    const b = Object.fromEntries(f);
+    await api(
+      "v3/expenses" + (old ? "/" + old.id : ""),
+      { ...b, revision: old?.revision },
+      old ? "PUT" : "POST",
+    );
+    $("#modal").close();
+    await reload();
+    notify("Lançamento salvo com histórico.");
+  });
+  if (old && !old.cancelled)
+    $("#cancel-expense").onclick = async () => {
+      const reason = form.elements.reason.value;
+      if (!reason.trim()) {
+        notify("Informe o motivo do cancelamento.", true);
+        return;
+      }
+      if (
+        !confirm(
+          "Cancelar lançamento? O histórico será preservado. Se já foi pago, a saída real continuará no caixa; cancelamento não comprova devolução.",
+        )
+      )
+        return;
+      try {
+        await api(
+          "v3/expenses/" + old.id,
+          {
+            revision: old.revision,
+            cancel: true,
+            reason,
+            confirmation: "CANCELAR LANÇAMENTO",
+          },
+          "PUT",
+        );
+        $("#modal").close();
+        await reload();
+      } catch (e) {
+        notify(e.message, true);
+      }
+    };
+}
+function settingsPage() {
+  const s = data.settings;
+  $("#content").innerHTML =
+    `<div class="panel"><form id="settings-form"><div class="form-grid"><label>Limite de margem baixa (%)<input type="number" min="0" max="100" step="0.01" name="lowMargin" value="${s.lowMargin}" required></label>${[
+      ["company", "Nome comercial"],
+      ["pix", "Pix (chave e identificação)"],
+      ["businessDetails", "Dados da empresa"],
+      ["instagram", "Instagram"],
+      ["phone", "Telefone"],
+    ]
+      .map(
+        ([k, l]) =>
+          `<label>${l}<input name="${k}" maxlength="500" value="${esc(s[k])}"></label>`,
+      )
+      .join(
+        "",
+      )}<label class="wide">Mensagem de agradecimento<textarea name="thanks" maxlength="2000" required>${esc(s.thanks)}</textarea></label></div><p class="form-note">Os dados comerciais são guardados apenas no banco local e aparecem no PDF comercial. O documento não apresenta custos internos, lucro ou margem.</p><div class="actions"><button>Salvar configurações</button></div></form></div>`;
+  bindForm("#settings-form", async (f) => {
+    await api("v3/settings", {
+      ...Object.fromEntries(f),
+      revision: s.revision || 0,
+    });
+    await reload();
+    notify("Configurações salvas neste computador.");
+  });
+}
+async function documentForm(o) {
+  try {
+    const custom = await api("v3/orders/" + o.id + "/document");
+    const content = `<h2>Pedido de Compra</h2><p>Modelo baseado no seu PDF. Usa a coleção, cliente, valores e entrega do pedido salvo. Não mostra informações financeiras internas.</p><form id="document-form"><label>Mensagem de agradecimento (opcional por pedido)<textarea name="thanks" maxlength="2000">${esc(custom.thanks || "")}</textarea></label><label>Arte (opcional)<input name="art" maxlength="2000" value="${esc(custom.art || "")}"></label><label>Embalagem (opcional)<input name="packaging" maxlength="2000" value="${esc(custom.packaging || "")}"></label><p class="form-note">Deixe em branco para usar as informações do pedido e as configurações comerciais. Para mudar Pix e contatos, abra Configurações. Regerar o PDF sempre usa a versão atual do pedido.</p><div class="actions"><button>Gerar Pedido de Compra (PDF)</button><button type="button" class="secondary" id="prepare-whatsapp">Preparar mensagem de WhatsApp</button></div><div id="document-ready"></div></form>`;
+    $("#modal-content").innerHTML = content;
+    bindForm("#document-form", async (f) => {
+      await api("v3/orders/" + o.id + "/document", Object.fromEntries(f));
+      $("#document-ready").innerHTML =
+        `<p class="success"><a href="/api/v3/orders/${o.id}/pdf">Baixar Pedido de Compra (PDF)</a></p>`;
+    });
+    $("#prepare-whatsapp").onclick = () => {
+      const field = document.createElement("textarea");
+      field.readOnly = true;
+      field.value = `Olá, ${clientName(o.clientId)}! Seu pedido Encanto Criativo está confirmado: ${brl(o.total)}. Previsão de entrega: ${day(o.delivery)}. Tem carinho que vira encanto.`;
+      $("#document-ready").replaceChildren(field);
+      field.select();
+    };
+  } catch (e) {
+    notify(e.message, true);
+  }
+}
+async function retireCatalog() {
+  try {
+    const p = await api("v3/catalog/preview", {});
+    modal(
+      `<h2>Conferir itens fictícios</h2><p>Itens abaixo têm marca explícita de demonstração e correspondem aos cinco nomes conhecidos. A retirada arquiva os cadastros para novos pedidos; preserva preços, IDs e referências antigas. Confira individualmente: nomes iguais também podem existir no catálogo real.</p><form id="retire-form">${p.items.map((c) => `<label class="history"><input type="checkbox" name="ids" value="${c.id}"> ${esc(c.name)} · ${c.referencedOrders} pedido(s) vinculado(s)<small>${esc(c.action)}</small></label>`).join("") || "<p>Nenhum item fictício ativo identificado.</p>"}<label>Para confirmar, digite ARQUIVAR SOMENTE ITENS FICTÍCIOS<input name="confirmation" autocomplete="off" required></label><p class="form-note">Um backup íntegro será criado e verificado antes da retirada. Nenhuma exclusão física será feita.</p><button ${p.items.length ? "" : "disabled"}>Criar backup e arquivar selecionados</button></form>`,
+    );
+    bindForm("#retire-form", async (f) => {
+      const r = await api("v3/catalog/retire", {
+        snapshot: p.snapshot,
+        ids: f.getAll("ids"),
+        confirmation: f.get("confirmation"),
+      });
+      $("#modal").close();
+      await reload();
+      notify(`${r.count} itens arquivados. Backup verificado: ${r.backup}`);
+    });
+  } catch (e) {
+    notify(e.message, true);
+  }
+}
+let agendaMonth = today().slice(0, 7),
+  agendaStatus = "";
+function agendaPage() {
+  $("#content").innerHTML =
+    `<div class="toolbar">${filters()}</div><div class="filters"><button id="previous-month" class="secondary" aria-label="Mês anterior">←</button><label>Mês<input id="agenda-month" type="month" value="${agendaMonth}"></label><button id="next-month" class="secondary" aria-label="Próximo mês">→</button><label>Status<select id="agenda-status"><option value="">Todos</option>${["Aberto", "Em produção", "Pronto", "Entregue", "Cancelado"].map((k) => `<option ${agendaStatus === k ? "selected" : ""}>${k}</option>`).join("")}</select></label></div><p class="form-note">Calendário pela previsão de entrega. Atrasos e entregas nos próximos três dias recebem destaque. Pedidos sem data aparecem abaixo.</p><div id="agenda-calendar"></div>`;
+  bindFilters();
+  const draw = () => {
+    agendaMonth = $("#agenda-month").value || today().slice(0, 7);
+    agendaStatus = $("#agenda-status").value;
+    const start = new Date(agendaMonth + "-01T12:00:00"),
+      first = start.getDay(),
+      last = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+    const rows = data.orders.filter(
+      (o) => !o.demo && (!agendaStatus || o.status === agendaStatus),
+    );
+    $("#agenda-calendar").innerHTML =
+      `<div class="calendar-grid">${["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((d) => `<strong>${d}</strong>`).join("")}${Array.from({ length: first }, () => '<div class="calendar-day blank"></div>').join("")}${Array.from(
+        { length: last },
+        (_, i) => {
+          const d = agendaMonth + "-" + String(i + 1).padStart(2, "0");
+          const eligible =
+            (!range.from || d >= range.from) && (!range.to || d <= range.to);
+          return `<div class="calendar-day ${d === today() ? "today" : ""}"><strong>${i + 1}</strong>${
+            eligible
+              ? rows
+                  .filter((o) => o.delivery === d)
+                  .map(
+                    (o) =>
+                      `<button class="calendar-event ${deliveryState(o) === "Atrasado" ? "late" : deliveryState(o) === "Entrega próxima" ? "soon" : ""}" data-order="${o.id}">${esc(clientName(o.clientId))}<small>${esc(o.status)} · ${deliveryState(o)}</small></button>`,
+                  )
+                  .join("")
+              : ""
+          }</div>`;
+        },
+      ).join(
+        "",
+      )}</div><div class="panel"><h3>Sem data de entrega</h3>${ordersTable(rows.filter((o) => !o.delivery))}</div>`;
+    bindOrderButtons();
+  };
+  $("#agenda-month").onchange = draw;
+  $("#agenda-status").onchange = draw;
+  const shift = (n) => {
+    const d = new Date(agendaMonth + "-15T12:00:00");
+    d.setMonth(d.getMonth() + n);
+    $("#agenda-month").value =
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    draw();
+  };
+  $("#previous-month").onclick = () => shift(-1);
+  $("#next-month").onclick = () => shift(1);
+  draw();
+}
+
 function render() {
   route = location.hash.slice(1);
   if (!pages[route]) route = "painel";
@@ -1255,12 +1682,22 @@ function render() {
     relatorios: reports,
     importar: imports,
     backups,
+    despesas: expensesPage,
+    agenda: agendaPage,
+    configuracoes: settingsPage,
   })[route]();
 }
 async function reload() {
-  const [base, extra] = await Promise.all([api("data"), api("v2/data")]);
+  const [base, extra, v3] = await Promise.all([
+    api("data"),
+    api("v2/data"),
+    api("v3/data"),
+  ]);
   data = {
     ...base,
+    expenses: v3.expenses || [],
+    expenseHistory: v3.expenseHistory || [],
+    settings: { ...settingsDefaults, ...v3.settings },
     ...{
       payments: extra.payments,
       history: extra.history,
@@ -1281,3 +1718,15 @@ api("session")
   .catch((e) =>
     notify("Não foi possível carregar o sistema: " + e.message, true),
   );
+
+// Refresh the calendar when another window changes a delivery or production status.
+const refreshAgenda = () => {
+  if (
+    route === "agenda" &&
+    !$("#modal").open &&
+    document.visibilityState === "visible"
+  )
+    reload().catch((e) => notify(e.message, true));
+};
+window.addEventListener("focus", refreshAgenda);
+setInterval(refreshAgenda, 30000);

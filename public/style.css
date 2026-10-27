@@ -755,3 +755,101 @@ h3 {
     gap: 12px;
   }
 }
+
+/* Version 3 extends the existing palette and spacing. */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 7px;
+  margin: 20px 0;
+}
+.calendar-grid > strong {
+  text-align: center;
+  color: #68745d;
+  padding: 8px;
+}
+.calendar-day {
+  background: #fffdf8;
+  border: 1px solid #e5dfd4;
+  border-radius: 10px;
+  padding: 9px;
+  min-height: 120px;
+  min-width: 0;
+}
+.calendar-day.today {
+  border: 2px solid #839674;
+}
+.calendar-day.blank {
+  opacity: 0.35;
+}
+.calendar-event {
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 7px;
+  margin-top: 7px;
+  border: 0;
+  border-radius: 7px;
+  background: #e5eadf;
+  color: #34402d;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.calendar-event small {
+  display: block;
+  font-size: 10px;
+  margin-top: 4px;
+}
+.calendar-event.late {
+  background: #f2d8d2;
+  color: #873b35;
+}
+.calendar-event.soon {
+  background: #f4e8c5;
+  color: #6b5529;
+}
+fieldset {
+  border: 1px solid #e5dfd4;
+  border-radius: 10px;
+  padding: 16px;
+}
+#favorite-metric {
+  max-width: 155px;
+}
+#document-ready textarea {
+  width: 100%;
+  min-height: 120px;
+}
+@media (max-width: 760px) {
+  .calendar-grid {
+    gap: 3px;
+  }
+  .calendar-day {
+    padding: 4px;
+    min-height: 100px;
+  }
+  .calendar-event {
+    padding: 4px;
+    font-size: 10px;
+  }
+  .calendar-event small {
+    font-size: 9px;
+  }
+  .calendar-grid > strong {
+    font-size: 11px;
+  }
+}
+aside {
+  overflow-y: auto;
+}
+aside .brand,
+aside nav,
+aside .nav-label,
+aside .sidebar-foot {
+  flex-shrink: 0;
+}
+@media (min-width: 761px) {
+  .sidebar-foot {
+    margin-top: 24px;
+  }
+}

@@ -10,7 +10,7 @@ test("navegação, cadastro, pedido, custo histórico e experiência móvel", as
   await expect(
     page.getByRole("heading", { name: "Um olhar para o seu negócio" }),
   ).toBeVisible();
-  await expect(page.getByText("Ambiente de testes")).toBeVisible();
+  await expect(page.getByText("Ambiente de testes")).toHaveCount(0);
   await page.getByRole("link", { name: "Clientes", exact: false }).click();
   await page.getByRole("button", { name: "Novo cliente" }).click();
   const client = "Cliente fictício navegador " + Date.now();

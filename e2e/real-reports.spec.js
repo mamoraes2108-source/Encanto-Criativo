@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-test("relatórios e Criações favoritas contam 43 reais e ignoram demonstrações e seu caixa", async ({
+test("relatórios e Coleções favoritas contam 43 reais e ignoram demonstrações e seu caixa", async ({
   page,
 }) => {
   const orders = Array.from({ length: 43 }, (_, i) => ({
@@ -78,8 +78,9 @@ test("relatórios e Criações favoritas contam 43 reais e ignoram demonstraçõ
   await page.goto("/#painel");
   const rank = page
     .locator(".panel")
-    .filter({ has: page.getByRole("heading", { name: "Criações favoritas" }) });
-  await expect(rank).toContainText("Criação real fictícia");
+    .filter({ has: page.getByRole("heading", { name: "Coleções favoritas" }) });
+  await page.getByLabel("Ordenar coleções favoritas").selectOption("quantity");
+  await expect(rank).toContainText("Coleção fictícia conferida");
   await expect(rank).toContainText("43 peças");
   await expect(rank).not.toContainText("Criação demonstração");
   await expect(page.locator(".cards").first()).toContainText("3.446,30");

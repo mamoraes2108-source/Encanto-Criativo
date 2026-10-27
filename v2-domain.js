@@ -78,6 +78,8 @@ export function computeV2(input, catalog, old = null) {
     );
     const item = catalog.find((c) => c.id === l.id) || previous;
     if (!item) throw Error("Item não encontrado no catálogo.");
+    if (item.archived && !previous)
+      throw Error("Item arquivado não pode compor novos pedidos.");
     const quantity = number(l.quantity, "Quantidade do item", true);
     if (quantity < 1 || quantity > 1000000)
       throw Error("Quantidade do item inválida.");

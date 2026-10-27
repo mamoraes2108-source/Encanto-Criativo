@@ -64,7 +64,8 @@ export function calculate(input, catalog) {
     throw Error("Item repetido no pedido.");
   const lines = input.lines.map((l) => {
     const item = catalog.find((c) => c.id === l.id);
-    if (!item) throw Error("Item não encontrado.");
+    if (!item || item.archived)
+      throw Error("Item não encontrado ou arquivado.");
     const count = number(l.quantity, "Quantidade do item", true);
     if (!count)
       throw Error("A quantidade de cada item deve ser maior que zero.");

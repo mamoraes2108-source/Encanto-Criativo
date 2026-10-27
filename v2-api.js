@@ -14,8 +14,21 @@ import {
 } from "./v2-domain.js";
 import { money, date, number } from "./domain.js";
 import { createBackup, restoreBackup, inspectBackup } from "./backup.js";
+const sessions = new Map();
+export const privateAccess = (req, res, next) => {
+  const token = req.headers.cookie
+    ?.split(";")
+    .map((s) => s.trim())
+    .find((s) => s.startsWith("encanto_session="))
+    ?.split("=")[1];
+  if (!token || !sessions.has(token) || sessions.get(token) < Date.now())
+    return res.status(403).json({
+      error: "Abra o sistema neste navegador para acessar arquivos privados.",
+    });
+  next();
+};
+
 export function registerV2(app, { db, list, put, transaction, directory }) {
-  const sessions = new Map();
   const restorePreviews = new Map();
   const getOrder = (id) => {
     const o = list("orders").find((o) => o.id === id);
@@ -45,18 +58,6 @@ export function registerV2(app, { db, list, put, transaction, directory }) {
       history(old, next, reason, action);
       return put("orders", next);
     });
-  const privateAccess = (req, res, next) => {
-    const token = req.headers.cookie
-      ?.split(";")
-      .map((s) => s.trim())
-      .find((s) => s.startsWith("encanto_session="))
-      ?.split("=")[1];
-    if (!token || !sessions.has(token) || sessions.get(token) < Date.now())
-      return res.status(403).json({
-        error: "Abra o sistema neste navegador para acessar arquivos privados.",
-      });
-    next();
-  };
   app.get("/api/session", (req, res) => {
     for (const [k, v] of sessions) if (v < Date.now()) sessions.delete(k);
     const token = randomUUID();

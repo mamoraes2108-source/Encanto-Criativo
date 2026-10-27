@@ -164,8 +164,11 @@ test("backup pelo navegador, restauração em nova pasta e simulador por margem"
     .getByRole("combobox", { name: "Métrica das coleções" })
     .selectOption("profit");
   await expect(
-    page.getByRole("heading", { name: "Evolução mensal por coleção" }),
+    page.getByRole("columnheader", { name: "Edições anuais" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Evolução mensal por coleção" }),
+  ).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/#pedidos");
   await expect(

@@ -4,7 +4,7 @@ import path from "node:path";
 const [mode, arg, target] = process.argv.slice(2);
 try {
   if (mode === "create") {
-    const dir = arg || "data";
+    const dir = arg || process.env.DATA_DIR || "data";
     const out =
       target || path.join(dir, "backups", `encanto-${Date.now()}.zip`);
     await mkdir(path.dirname(out), { recursive: true, mode: 0o700 });
